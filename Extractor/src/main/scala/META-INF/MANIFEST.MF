@@ -1,0 +1,19 @@
+Manifest-Version: 1.0
+Class-Path: sac-1.3.jar httpmime-4.5.2.jar neko-htmlunit-2.23.jar html
+ unit-core-js-2.23.jar scala-scraper_2.11-1.2.0.jar jetty-util-9.2.18.
+ v20160721.jar websocket-common-9.2.18.v20160721.jar paranamer-2.8.jar
+  scala-xml_2.11-1.0.6.jar joda-time-2.9.4.jar commons-codec-1.10.jar 
+ nscala-time_2.11-2.14.0.jar xercesImpl-2.11.0.jar httpclient-4.5.2.ja
+ r scala-csv_2.11-1.3.4.jar derby-10.13.1.1.jar commons-collections-3.
+ 2.2.jar commons-io-2.5.jar json4s-ast_2.11-3.5.1.jar websocket-api-9.
+ 2.18.v20160721.jar json4s-core_2.11-3.5.1.jar json4s-scalap_2.11-3.5.
+ 1.jar commons-configuration2-2.0.jar commons-logging-1.2.jar commons-
+ beanutils-1.9.3.jar commons-text-1.1.jar xalan-2.7.2.jar cssparser-0.
+ 9.20.jar serializer-2.7.2.jar json-20160810.jar htmlunit-2.23.jar sca
+ laz-core_2.11-7.2.8.jar httpcore-4.4.4.jar postgresql-42.0.0.jre7.jar
+  log4j-1.2.17.jar commons-lang3-3.5.jar config-1.3.1.jar json4s-nativ
+ e_2.11-3.5.1.jar websocket-client-9.2.18.v20160721.jar jetty-io-9.2.1
+ 8.v20160721.jar scala-library-2.11.7.jar jsoup-1.10.1.jar joda-conver
+ t-1.2.jar xml-apis-1.4.01.jar
+Main-Class: es.uam.eps.tfm.fmendezlopez.extraction.Stage4
+
