@@ -17,6 +17,7 @@ object CookipediaExtraction extends Logging{
   private var properties : Configuration = _
   private var csvRecipes : CSVWriter = _
   private var csvSteps : CSVWriter = _
+  private var csvIngredients : CSVWriter = _
 
   def main(args: Array[String]): Unit = {
     properties = PropertiesManager.loadProperties(args(0), PropertiesManager.EXTRACTION_PROPERTIES_FILE)
@@ -30,7 +31,7 @@ object CookipediaExtraction extends Logging{
     connectionProperties.put("delay-detection", properties.getProperty("stage6.scraping.time.detection"))
     connectionProperties.put("base-host", properties.getProperty("cookipedia.url.base"))
     connectionProperties.put("base-difficulty", properties.getProperty("cookipedia.url.base.difficulty"))
-    connectionProperties.put("base-recipe", properties.getProperty("cookipedia.url.base.recipe"))
+    connectionProperties.put("base-recipe", properties.getProperty("cookipedia.url.base"))
 
     HttpManager.setProperties(properties)
 
@@ -40,19 +41,23 @@ object CookipediaExtraction extends Logging{
     val outCSVDelimiter = properties.getString("stage6.output.csv.delimiter")
     val csvRecipesName : String = properties.getString("stage6.output.csv.recipes.name")
     val csvStepsName : String = properties.getString("stage6.output.csv.steps.name")
+    val csvIngredientsName : String = properties.getString("stage6.output.csv.ingredients.name")
 
     csvRecipes = CSVManager.openCSVWriter(outputDir, csvRecipesName, outCSVDelimiter.charAt(0), true, "UTF-8")
     csvSteps = CSVManager.openCSVWriter(outputDir, csvStepsName, outCSVDelimiter.charAt(0), true, "UTF-8")
+    csvIngredients = CSVManager.openCSVWriter(outputDir, csvIngredientsName, outCSVDelimiter.charAt(0), true, "UTF-8")
 
     csvRecipes.writeRow(Utils.headerToSeq(properties.getString("stage6.output.csv.recipes.header"), outCSVDelimiter.charAt(0)))
     csvSteps.writeRow(Utils.headerToSeq(properties.getString("stage6.output.csv.steps.header"), outCSVDelimiter.charAt(0)))
+    csvIngredients.writeRow(Utils.headerToSeq(properties.getString("stage6.output.csv.ingredients.header"), outCSVDelimiter.charAt(0)))
     val diffMap = Map(
       "HARD" -> properties.getString("cookipedia.url.hard"),
       "MEDIUM" -> properties.getString("cookipedia.url.medium"),
       "EASY" -> properties.getString("cookipedia.url.easy")
     )
 
-    extractURLs(diffMap)
+    val urlMap = extractURLs(diffMap)
+    extractRecipes(outCSVDelimiter, urlMap)
   }
 
   def extractURLs(diffMap : Map[String, String]) : Map[String, Seq[String]] = {
@@ -65,7 +70,7 @@ object CookipediaExtraction extends Logging{
       logger.info("Extracting URLs...")
       var nrecipes = maxrecipes
       var continue = true
-      var page = url
+      val page = url
       var urls : Seq[String] = Seq()
       do{
         val html = HttpManager.requestURL(page, connectionProperties)
@@ -79,15 +84,22 @@ object CookipediaExtraction extends Logging{
         nrecipes -= list.length
         continue = nrecipes > 0
       } while(continue)
+      result += (difficulty -> urls)
     })
     result
   }
 
   def extractRecipes(outCSVDelimiter : String, urls : Map[String, Seq[String]]) : Unit = {
     var id = 0
+    val diffWordMap = Map(
+      "HARD" -> properties.getString("general.attribute.recipe.difficulty.hard"),
+      "MEDIUM" -> properties.getString("general.attribute.recipe.difficulty.medium"),
+      "EASY" -> properties.getString("general.attribute.recipe.difficulty.easy")
+    )
     urls.foreach({case(difficulty, urlList) =>
       logger.info(s"Processing category ${difficulty}")
       logger.info("Extracting recipes...")
+      val diffWord = diffWordMap(difficulty)
       val recipeList : Seq[CookipediaRecipe] = urlList.flatMap(url => {
         val ret = HttpManager.requestURL(url, connectionProperties)
         if(ret.isEmpty){
@@ -96,7 +108,8 @@ object CookipediaExtraction extends Logging{
           System.exit(1)
         }
         val page = ret.get
-        val potRecipe = Scraper.scrapeCookipediaRecipe(page, 'd')
+        logger.info(s"Scraping recipe with URL ${url}")
+        val potRecipe = Scraper.scrapeCookipediaRecipe(page, '|')
         if(potRecipe.isEmpty){
           logger.error(s"Could not scrape recipe with URL ${url}")
           Seq()
@@ -104,18 +117,30 @@ object CookipediaExtraction extends Logging{
         else {
           val recipe = potRecipe.get
           recipe.id_=(id)
+          recipe.difficulty_=(diffWord)
           id += 1
           Seq(recipe)
         }
       })
       logger.info(s"Extracted ${recipeList.length} recipes")
-      //printRecipeList(recipeList, (csvRecipes, csvSteps))
+      printRecipeList(recipeList, (csvRecipes, csvSteps, csvIngredients))
       logger.info(s"Processed category ${difficulty}")
     })
     beforeExit
   }
+
+  def printRecipeList(recipes : Seq[CookipediaRecipe], writers : (CSVWriter, CSVWriter, CSVWriter)) : Unit = {
+
+    recipes.foreach(recipe => {
+      writers._1.writeRow(recipe.toSeq())
+      recipe.steps.foreach({case (number, text) => writers._2.writeRow(Seq(recipe.id, number, text))})
+      recipe.ingredients.foreach({case (text) => writers._3.writeRow(Seq(recipe.id, text))})
+    })
+  }
+
   def beforeExit = {
     CSVManager.closeCSVWriter(csvRecipes)
     CSVManager.closeCSVWriter(csvSteps)
+    CSVManager.closeCSVWriter(csvIngredients)
   }
 }

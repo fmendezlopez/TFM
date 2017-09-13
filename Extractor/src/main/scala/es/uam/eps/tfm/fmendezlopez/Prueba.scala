@@ -9,7 +9,12 @@ import java.util.{Calendar, Locale, StringTokenizer}
 import org.json.{JSONArray, JSONObject}
 import es.uam.eps.tfm.fmendezlopez.dao._
 import es.uam.eps.tfm.fmendezlopez.utils.CSVManager
-
+import net.ruippeixotog.scalascraper.browser.JsoupBrowser
+import org.jsoup.Jsoup
+import net.ruippeixotog.scalascraper.browser.JsoupBrowser
+import net.ruippeixotog.scalascraper.model.{Element, TextNode}
+import net.ruippeixotog.scalascraper.dsl.DSL._
+import net.ruippeixotog.scalascraper.scraper.ContentExtractors._
 
 /**
   * Created by Francisco on 13/04/2017.
@@ -19,10 +24,8 @@ object Prueba {
   def main(args: Array[String]): Unit = {
     //println(detectRecipeID("http://allrecipes.com/recipe/255587/naked-cherry-tomato-salad/"))
     //println(detectRecipeID("http://allrecipes.com/recipe/naked-cherry-tomato-salad/44534543"))
-    val s1 = Set(1, 3, 4)
-    val s2 = Set(1, 3, 5)
-    val s3 = s1 ++ s2
-    s3.foreach(println)
+    val str = "dd34/7.5,2"
+    println(str.replaceAll("[^\\d]", ""))
   }
 
   def detectRecipeID(url : String) : Option[Long] = {

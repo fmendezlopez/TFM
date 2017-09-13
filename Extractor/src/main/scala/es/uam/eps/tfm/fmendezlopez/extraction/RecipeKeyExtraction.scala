@@ -17,6 +17,7 @@ object RecipeKeyExtraction extends Logging{
   private var properties : Configuration = _
   private var csvRecipes : CSVWriter = _
   private var csvSteps : CSVWriter = _
+  private var csvIngredients : CSVWriter = _
 
   def main(args: Array[String]): Unit = {
     properties = PropertiesManager.loadProperties(args(0), PropertiesManager.EXTRACTION_PROPERTIES_FILE)
@@ -42,12 +43,15 @@ object RecipeKeyExtraction extends Logging{
     val outCSVDelimiter = properties.getString("stage5.output.csv.delimiter")
     val csvRecipesName : String = properties.getString("stage5.output.csv.recipes.name")
     val csvStepsName : String = properties.getString("stage5.output.csv.steps.name")
+    val csvIngredientsName : String = properties.getString("stage6.output.csv.ingredients.name")
 
     csvRecipes = CSVManager.openCSVWriter(outputDir, csvRecipesName, outCSVDelimiter.charAt(0), true, "UTF-8")
     csvSteps = CSVManager.openCSVWriter(outputDir, csvStepsName, outCSVDelimiter.charAt(0), true, "UTF-8")
+    csvIngredients = CSVManager.openCSVWriter(outputDir, csvIngredientsName, outCSVDelimiter.charAt(0), true, "UTF-8")
 
     csvRecipes.writeRow(Utils.headerToSeq(properties.getString("stage5.output.csv.recipes.header"), outCSVDelimiter.charAt(0)))
     csvSteps.writeRow(Utils.headerToSeq(properties.getString("stage5.output.csv.steps.header"), outCSVDelimiter.charAt(0)))
+    csvIngredients.writeRow(Utils.headerToSeq(properties.getString("stage6.output.csv.ingredients.header"), outCSVDelimiter.charAt(0)))
     extractRecipes(outCSVDelimiter)
   }
 
@@ -56,6 +60,11 @@ object RecipeKeyExtraction extends Logging{
       "HARD" -> properties.getString("recipekey.url.hard"),
       "MEDIUM" -> properties.getString("recipekey.url.medium"),
       "EASY" -> properties.getString("recipekey.url.easy")
+    )
+    val diffWordMap = Map(
+      "HARD" -> properties.getString("general.attribute.recipe.difficulty.hard"),
+      "MEDIUM" -> properties.getString("general.attribute.recipe.difficulty.medium"),
+      "EASY" -> properties.getString("general.attribute.recipe.difficulty.easy")
     )
 
     val pagesize = properties.getInt("stage5.scraping.pagesize")
@@ -66,6 +75,7 @@ object RecipeKeyExtraction extends Logging{
     diffMap.foreach({case(difficulty, url) =>
       logger.info(s"Processing category ${difficulty}")
       logger.info("Extracting URLs...")
+      val diffWord = diffWordMap(difficulty)
       val urlList : Seq[String] = (1 to npages).flatMap(i => {
         val newURL = url.format(i.toString)
         val ret = HttpManager.requestRecipeKeyURL(newURL, connectionProperties)
@@ -101,29 +111,31 @@ object RecipeKeyExtraction extends Logging{
           else {
             val recipe = ret.get
             recipe.id_=(id)
+            recipe.difficulty_=(diffWord)
             id += 1
             Seq(recipe)
           }
         }
       })
       logger.info(s"Extracted ${recipeList.length} recipes")
-      printRecipeList(recipeList, (csvRecipes, csvSteps))
+      printRecipeList(recipeList, (csvRecipes, csvSteps, csvIngredients))
       logger.info(s"Processed category ${difficulty}")
     })
     beforeExit
   }
 
-  def printRecipeList(recipes : Seq[RecipeKeyRecipe], writers : (CSVWriter, CSVWriter)) : Unit = {
+  def printRecipeList(recipes : Seq[RecipeKeyRecipe], writers : (CSVWriter, CSVWriter, CSVWriter)) : Unit = {
 
     recipes.foreach(recipe => {
       writers._1.writeRow(recipe.toSeq())
       recipe.steps.foreach({case (number, text) => writers._2.writeRow(Seq(recipe.id, number, text))})
+      recipe.ingredients.foreach({case (text) => writers._3.writeRow(Seq(recipe.id, text))})
     })
   }
 
   def beforeExit = {
     CSVManager.closeCSVWriter(csvRecipes)
     CSVManager.closeCSVWriter(csvSteps)
+    CSVManager.closeCSVWriter(csvIngredients)
   }
-
 }

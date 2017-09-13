@@ -11,6 +11,7 @@ class RecipeKeyRecipe {
   private var _name : String = ""
   private var _mealtype : String = ""
   private var _cuisine : String = ""
+  private var _ingredients : Seq[String] = Seq()
   private var _ingredientsnumber : Int = 0
   private var _stepsnumber : Int = 0
   private var _steps : Seq[(Int, String)] = Seq()
@@ -24,6 +25,7 @@ class RecipeKeyRecipe {
   def name = _name
   def mealtype = _mealtype
   def cuisine = _cuisine
+  def ingredients = _ingredients
   def ingredientsnumber = _ingredientsnumber
   def stepsnumber = _stepsnumber
   def steps = _steps
@@ -37,6 +39,7 @@ class RecipeKeyRecipe {
   def name_=(value : String) : Unit = _name = value
   def mealtype_= (value : String) : Unit = _mealtype = value
   def cuisine_= (value : String) : Unit = _cuisine = value
+  def ingredients_= (value : Seq[String]) : Unit = _ingredients = value
   def ingredientsnumber_= (value : Int) : Unit = _ingredientsnumber = value
   def steps_= (value : Seq[(Int, String)]) : Unit = _steps = value
   def stepsnumber_=(value : Int) : Unit = _stepsnumber = value

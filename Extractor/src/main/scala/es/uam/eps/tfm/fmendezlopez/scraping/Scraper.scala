@@ -879,8 +879,8 @@ object Scraper extends Logging{
 
   def scrapeRecipeKeyRecipe(html : String) : Option[RecipeKeyRecipe] = {
 
+    /*
     def scrapeSteps(steps_div : Element) : Seq[(Int, String)] = {
-
       var result : Seq[(Int, String)] = Seq()
       val str = steps_div.innerHtml
       var continue = true
@@ -910,6 +910,30 @@ object Scraper extends Logging{
       result
 
     }
+    */
+    def scrapeSteps(steps_div : Element) : Seq[(Int, String)] = {
+      var i = 0
+      steps_div.childNodes.toSeq.flatMap(node => {
+        if(node.isInstanceOf[TextNode]){
+          val n = node.asInstanceOf[TextNode]
+          i += 1
+          Seq((i, n.content))
+        }
+        else{
+          Seq()
+        }
+      })
+    }
+    def scrapeIngredients(ingredients_div : Element) : Seq[String] = {
+      (ingredients_div >> elementList("div"))
+        .filter(_.hasAttr("itemprop"))
+        .flatMap(el => {
+          val spans = (el >> elementList("span")).filter(_.hasAttr("itemprop"))
+          var text = spans.filter(_.attr("itemprop") == "amount").head.text
+          text += " " + spans.filter(_.attr("itemprop") == "name").head.text
+          Seq(text.trim)
+        })
+    }
 
     val result : RecipeKeyRecipe = new RecipeKeyRecipe
     val browser = JsoupBrowser()
@@ -918,9 +942,9 @@ object Scraper extends Logging{
     val title = sanitizeHTMLString(h1.text)
     result.name_=(title)
     val ingredients_div = (doc >> elementList("div#ingredients")).head
-    val ingredients : List[Element] = (ingredients_div >> elementList("div"))
-      .filter(_.hasAttr("itemprop"))
+    val ingredients = scrapeIngredients(ingredients_div)
     val ingredients_number = ingredients.length
+    result.ingredients_=(ingredients)
     result.ingredientsnumber_=(ingredients_number)
     val div1 = (doc >> elementList("div#box_main_recipe")).head
     val div2 = (div1 >> elementList("div.box_content_browse")).head
@@ -987,17 +1011,8 @@ object Scraper extends Logging{
     //val steps : List[Element] = (steps_div >> elementList("strong"))
     //val steps_number = steps.length
 
-    var i = 0
-    val recipe_steps : Seq[(Int, String)] = steps_div.childNodes.toSeq.flatMap(node => {
-      if(node.isInstanceOf[TextNode]){
-        val n = node.asInstanceOf[TextNode]
-        i += 1
-        Seq((i, n.content))
-      }
-      else{
-        Seq()
-      }
-    })
+
+    val recipe_steps : Seq[(Int, String)] = scrapeSteps(steps_div)
     //val recipe_steps = scrapeSteps(steps_div)
     result.steps_=(recipe_steps)
     result.stepsnumber_=(recipe_steps.length)
@@ -1031,6 +1046,115 @@ object Scraper extends Logging{
   }
 
   def scrapeCookipediaRecipe(html : String, delimiter : Char) : Option[CookipediaRecipe] = {
-    None
+    def scrapeTime(text : String) : Option[Int] = {
+      val tokenizer = new StringTokenizer(text, " ")
+      var result = 0
+      while(tokenizer.hasMoreElements){
+        val token1 = tokenizer.nextToken()
+        if(!token1.contains("None")) {
+          val token = token1.trim.replaceAll("[^\\d]", "")
+          if(!token.isEmpty && tokenizer.hasMoreTokens){
+            var number = token.toInt
+            var unit = tokenizer.nextToken().trim
+            if (unit.contains("day")) {
+              number *= 24
+              unit = "hour"
+            }
+            if (unit.contains("hour")) {
+              number *= 60
+            }
+            result += number
+          }
+          else{
+            logger.debug("Founded time not 'None' and empty")
+          }
+        }
+      }
+      logger.debug(s"Time scraped: ${result}")
+      Some(result)
+    }
+
+    def scrapeSteps(div : Element) : Seq[(Int, String)] = {
+      var number = 0
+      (div >> elementList("span.recipeInstructions")).flatMap(el => {
+        number += 1
+        val span = el >> element("span")
+        Seq((number, el.text))
+      })
+    }
+
+    def scrapeIngredients(div : Element) : Seq[String] = {
+      (div >> elementList("span.recipeIngredient")).flatMap(el => {
+        val span = el >> element("span")
+        Seq(el.text)
+      })
+    }
+
+    val result : CookipediaRecipe = new CookipediaRecipe()
+    val browser = JsoupBrowser()
+    val doc = browser.parseString(html)
+    val name = (doc >> element("h1")).innerHtml.replace(delimiter, ' ')
+    val div = doc >> element("div#mw-content-text")
+    val ingredients = scrapeIngredients(div)
+    val ingredients_number = ingredients.length
+    val steps = scrapeSteps(div)
+    val steps_number = steps.length
+    val table = doc >> element("table.wikitable")
+    val body = table >> element("tbody")
+    val trs = (body >> elementList("tr"))
+    var prep_time = -1
+    var cook_time = -1
+    var total_time = -1
+    trs.foreach(tr => {
+      val tds = tr >> elementList("td")
+      var found = false
+      var timeType = ""
+      tds.foreach(td => {
+        if(found){
+          val value = scrapeTime(td.innerHtml)
+          if(value.isEmpty){
+            logger.error("Could not scrap recipe")
+            return None
+          }
+          else {
+            timeType match {
+              case "preparation" => prep_time = value.get
+              case "cooking" => cook_time = value.get
+              case "total" => total_time = value.get
+            }
+          }
+          found = false
+        }
+        else{
+          val as = td >> elementList("a")
+          as.foreach(a => {
+            if (a.hasAttr("title") && a.attr("title").contains("time")) {
+              val title = a.attr("title")
+              if (title.contains("preparation")) {
+                timeType = "preparation"
+                found = true
+              }
+              else if (title.contains("cooking")) {
+                timeType = "cooking"
+                found = true
+              }
+              else if (title.contains("total")) {
+                timeType = "total"
+                found = true
+              }
+            }
+          })
+        }
+      })
+    })
+    result.name_=(name)
+    result.ingredients_=(ingredients)
+    result.steps_=(steps)
+    result.prepTime_=(prep_time)
+    result.cookTime_=(cook_time)
+    result.totalTime_=(total_time)
+    result.ingredientsnumber_=(ingredients_number)
+    result.stepsnumber_=(steps_number)
+    Some(result)
   }
 }

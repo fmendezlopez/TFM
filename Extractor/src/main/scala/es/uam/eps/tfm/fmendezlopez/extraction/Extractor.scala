@@ -163,7 +163,7 @@ object Extractor extends Logging{
     var result : Seq[User] = Seq()
     try{
       (1 to npages).foreach(i => {
-        val ret = HttpManager.requestFollowingAPI(id, connectionProperties, pagesize, i)
+        val ret = HttpManager.requestFollowersAPI(id, connectionProperties, pagesize, i)
         if(ret.isEmpty){
           logger.error(s"Could not retrieve following for id ${id}")
           return None

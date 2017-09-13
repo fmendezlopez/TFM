@@ -7,6 +7,7 @@ class CookipediaRecipe {
 
   private var _id : Long = -1
   private var _name : String = ""
+  private var _ingredients : Seq[String] = Seq()
   private var _ingredientsnumber : Int = 0
   private var _stepsnumber : Int = 0
   private var _steps : Seq[(Int, String)] = Seq()
@@ -17,6 +18,7 @@ class CookipediaRecipe {
 
   def id = _id
   def name = _name
+  def ingredients = _ingredients
   def ingredientsnumber = _ingredientsnumber
   def stepsnumber = _stepsnumber
   def steps = _steps
@@ -27,6 +29,7 @@ class CookipediaRecipe {
 
   def id_= (value : Long) : Unit = _id = value
   def name_=(value : String) : Unit = _name = value
+  def ingredients_= (value : Seq[String]) : Unit = _ingredients = value
   def ingredientsnumber_= (value : Int) : Unit = _ingredientsnumber = value
   def steps_= (value : Seq[(Int, String)]) : Unit = _steps = value
   def stepsnumber_=(value : Int) : Unit = _stepsnumber = value
