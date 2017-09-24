@@ -190,11 +190,10 @@ object Stage4 extends Logging{
     val nlines = properties.getLong("stage4.stage1.scraping.nlines")
     val delay_nlines = properties.getLong("stage4.stage1.scraping.delay.nlines")
 
-    val max_usermadeit = properties.getInt("stage4.stage1.scraping.max.user.madeit")
-    val max_userfav = properties.getInt("stage4.stage1.scraping.max.user.fav")
     val max_userreviews = properties.getInt("stage4.stage1.scraping.max.user.reviews")
     val max_userfollowing = properties.getInt("stage4.stage1.scraping.max.user.following")
     val maxrecipes = properties.getInt("stage4.stage1.scraping.max_recipes_user")
+    val minrecipes = properties.getInt("stage4.stage1.scraping.minrecipes")
 
     files.foreach(file => {
       if(!processedFiles.contains(file)) {
@@ -240,121 +239,114 @@ object Stage4 extends Logging{
               System.exit(1)
             }
             val user = potUser.get
-            printUser(user, csvUsers)
-            Thread.sleep(500)
-
-            logger.info("Getting user following...")
-            var userList: Seq[User] = Seq()
-            var potFollowing = Extractor.extractFollowing(id, connectionProperties, inCSVDelimiter, max_userfollowing)
-            if (potFollowing.isEmpty) {
-              logger.fatal("Stopping...")
-              beforeExit
-              System.exit(1)
+            if(!isValidUser(user, minrecipes)){
+              logger.warn(s"User has less than ${minrecipes} recipes. Discarded.")
             }
-            val following = potFollowing.get
-            logger.info(s"Got ${following.length} following")
+            else{
+              Thread.sleep(500)
 
-            logger.info("Getting user followers...")
-            val potFollowers = Extractor.extractFollowers(id, connectionProperties, inCSVDelimiter, max_userfollowing)
-            if (potFollowers.isEmpty) {
-              logger.fatal("Stopping...")
-              beforeExit
-              System.exit(1)
-            }
-            val followers = potFollowers.get
-            logger.info(s"Got ${followers.length} followers")
-            /*
-            var isFollowing = true
-            val following = potUsers.get
-            logger.info(s"Got ${following.length} following")
-            if (following.isEmpty) {
-              logger.info(s"Following list is empty. Getting followers...")
-              potUsers = Extractor.extractFollowers(id, connectionProperties, inCSVDelimiter, max_userfollowing)
-              if (potUsers.isEmpty) {
+              logger.info("Getting user following...")
+              val potFollowing = Extractor.extractFollowing(id, connectionProperties, inCSVDelimiter, max_userfollowing)
+              if (potFollowing.isEmpty) {
                 logger.fatal("Stopping...")
                 beforeExit
                 System.exit(1)
               }
-              val followers = potUsers.get
+              val following = potFollowing.get
+              logger.info(s"Got ${following.length} following")
+
+              logger.info("Getting user followers...")
+              val potFollowers = Extractor.extractFollowers(id, connectionProperties, inCSVDelimiter, max_userfollowing)
+              if (potFollowers.isEmpty) {
+                logger.fatal("Stopping...")
+                beforeExit
+                System.exit(1)
+              }
+              val followers = potFollowers.get
               logger.info(s"Got ${followers.length} followers")
-              if (!followers.isEmpty) {
-                isFollowing = false
-                userList = followers
-              }
-            }
-            else {
-              userList = following
-            }
-            */
-            Thread.sleep(500)
+              Thread.sleep(500)
 
-            connectionProperties.replace("referrer", user.profileUrl)
+              connectionProperties.replace("referrer", user.profileUrl)
 
-            logger.info("Getting user recipes...")
-            val potUserRecipes = Extractor.extractUserRecipes(user, connectionProperties, outCSVDelimiter, maxrecipes)
-            if (potUserRecipes.isEmpty) {
-              logger.fatal("Impossible to extract user recipes.\nClosing...")
-              System.exit(1)
-            }
-
-            var len = 0
-            potUserRecipes.get._1.values.foreach(len += _.length)
-            potUserRecipes.get._2.values.foreach(len += _.length)
-            logger.info(s"Got ${len} recipes")
-
-            if (len > 0) {
-              logger.info("Getting user reviews...")
-              val potReviews = Extractor.extractUserReviews(user.id, connectionProperties, inCSVDelimiter, max_userreviews)
-              if (potReviews.isEmpty) {
-                logger.fatal("Stopping...")
-                beforeExit
+              logger.info("Getting user recipes...")
+              val potUserRecipes = Extractor.extractUserRecipes(user, connectionProperties, outCSVDelimiter, maxrecipes)
+              if (potUserRecipes.isEmpty) {
+                logger.fatal("Impossible to extract user recipes.\nClosing...")
                 System.exit(1)
               }
 
+              var len = 0
+              potUserRecipes.get._1.values.foreach(len += _.length)
+              potUserRecipes.get._2.values.foreach(len += _.length)
+              logger.info(s"Got ${len} recipes")
 
-              printReviewList(potReviews.get, (csvReviews, csvRecipesUrls))
-              /*
-              if (isFollowing)
-                printUserFollowing(potUsers.get, user, (csvUsers, csvRelationship, csvUsersUrls))
-              else
-                printUserFollowers(potUsers.get, user, (csvUsers, csvRelationship, csvUsersUrls))
-              */
-              printUserFollowing(potFollowing.get, user, (csvUsers, csvRelationshipUser, csvUsersUrls))
-              printUserFollowers(potFollowers.get, user, (csvUsers, csvRelationshipUser, csvUsersUrls))
-              printRecipeList(potUserRecipes.get._1, (csvRecipes, csvIngredients, csvSteps, csvNutrition))
-              printUserRecipesList(user.id, potUserRecipes.get._2, csvRelationshipRecipe)
+              if (len > 0) {
+                logger.info("Getting user reviews...")
+                val potReviews = Extractor.extractUserReviews(user.id, connectionProperties, inCSVDelimiter, max_userreviews)
+                if (potReviews.isEmpty) {
+                  logger.fatal("Stopping...")
+                  beforeExit
+                  System.exit(1)
+                }
 
-              nreviews += potReviews.get.length
-              nrecipes += len
-              total_recipes += len
-              total_users += 1
 
-              logger.info(s"Extracted ${nreviews} reviews")
-              logger.info(s"Extracted ${total_recipes} recipes in total")
-              logger.info(s"Extracted ${total_users} users in total")
+                printUser(user, csvUsers)
+                printReviewList(potReviews.get, (csvReviews, csvRecipesUrls))
+                /*
+                if (isFollowing)
+                  printUserFollowing(potUsers.get, user, (csvUsers, csvRelationship, csvUsersUrls))
+                else
+                  printUserFollowers(potUsers.get, user, (csvUsers, csvRelationship, csvUsersUrls))
+                */
+                printUserFollowing(potFollowing.get, user, (csvUsers, csvRelationshipUser, csvUsersUrls))
+                printUserFollowers(potFollowers.get, user, (csvUsers, csvRelationshipUser, csvUsersUrls))
+                printRecipeList(potUserRecipes.get._1, (csvRecipes, csvIngredients, csvSteps, csvNutrition))
+                printUserRecipesList(user.id, potUserRecipes.get._2, csvRelationshipRecipe)
 
-              //DB insertion
-              try {
-                daoDB.insertUser(id.toString)
-              } catch {
-                case sql : SQLException =>
-                  logger.fatal(sql.getMessage)
+                try {
+                  total_recipes = daoDB.countRecipes()
+                } catch {
+                  case ie : InstantiationException =>
+                    logger.fatal(ie.getMessage)
+                  case iae : IllegalAccessException =>
+                    logger.fatal(iae.getMessage)
+                  case cnfe : ClassNotFoundException =>
+                    logger.fatal(cnfe.getMessage)
+                  case sql : SQLException =>
+                    logger.fatal(sql.getMessage)
+                }
+
+                nreviews += potReviews.get.length
+                nrecipes += len
+                total_users += 1
+
+                logger.info(s"Extracted ${nreviews} reviews")
+                logger.info(s"Extracted ${total_recipes} recipes in total")
+                logger.info(s"Extracted ${total_users} users in total")
+
+                //DB insertion
+                try {
+                  daoDB.insertUser(id.toString)
+                } catch {
+                  case sql : SQLException =>
+                    logger.fatal(sql.getMessage)
+                }
+
+                potUserRecipes.get._1.foreach({case(_, recipes) =>
+                  recipes.foreach(recipe =>
+                    //DB insertion
+                    try {
+                      daoDB.insertRecipe(recipe.id.toString)
+                    } catch {
+                      case sql : SQLException =>
+                        logger.fatal(sql.getMessage)
+                    }
+                  )
+                })
               }
-
-              potUserRecipes.get._1.foreach({case(_, recipes) =>
-                recipes.foreach(recipe =>
-                  //DB insertion
-                  try {
-                    daoDB.insertRecipe(recipe.id.toString)
-                  } catch {
-                    case sql : SQLException =>
-                      logger.fatal(sql.getMessage)
-                  }
-                )
-              })
-            }
-            else {
-              logger.warn("Recipe list is empty")
+              else {
+                logger.warn("Recipe list is empty")
+              }
             }
           }
           lines += 1
@@ -425,160 +417,7 @@ object Stage4 extends Logging{
     }
     })
   }
-  /*
-
-  def processFile(csvReader : CSVReader, state : JSONObject, inCSVDelimiter : String) = {
-
-    var delay = connectionProperties.getProperty("delay-afterLine").toLong
-    val nlines = connectionProperties.getProperty("user-nlines").toInt
-    val delay_nlines = connectionProperties.getProperty("delay-nlines").toLong
-
-    val lines = state.getInt("lastLine")
-    CSVManager.skipLines(csvReader, lines, (ret) => if(ret.isEmpty)true else false)
-    var i = lines + 1
-    csvReader.foreach(line => {
-      processLine(line, inCSVDelimiter, delay)
-      state.put("lastLine", i)
-      logger.info(s"Line $i processed")
-      logger.info(s"${state.toString}")
-      if(i % nlines == 0){
-        logger.info(s"$nlines lines processed. Sleeping...")
-        Thread.sleep(delay_nlines)
-      }
-      i += 1
-    })
+  def isValidUser(user: User, threshold: Int) : Boolean = {
+    (user.recipeCount + user.favCount + user.madeitCount) >= threshold
   }
-  def processLine(line : Seq[String], inCSVDelimiter : String, delay : Long) = {
-
-    val maxAttempts = connectionProperties.getProperty("attempts-user").toInt
-    var attempts = 0
-    val id = line(1).toLong
-    var continue = true
-    var user : User = null
-    while(continue) {
-      val potUser = Extractor.extractUser(id, connectionProperties, inCSVDelimiter)
-      if (potUser.isEmpty) {
-        logger.error(s"Could not extract user with id ${id}")
-        attempts += 1
-        Thread.sleep(delay * attempts)
-        continue = attempts < maxAttempts
-        if (attempts == maxAttempts) {
-          logger.fatal("Max number of attempts reached requesting user!\nFinishing...")
-          beforeExit
-          System.exit(1)
-        }
-      }
-      else {
-        user = potUser.get
-        continue = false
-      }
-    }
-    continue = true
-    attempts = 0
-
-    val pagesize_1 = properties.getInt("stage4.scraping.following.pagesize.1")
-    val pagesize_2 = properties.getInt("stage4.scraping.following.pagesize.2")
-    val minrecipes = properties.getInt("stage4.scraping.user.minrecipes")
-    var users : Seq[User] = Seq(user)
-    while(continue) {
-      val potUsers = Extractor.extractFollowing(id, connectionProperties, inCSVDelimiter, pagesize_1, 1)
-      if (potUsers.isEmpty) {
-        logger.error(s"Could not extract followings for id ${id}")
-        attempts += 1
-        Thread.sleep(delay * attempts)
-        continue = attempts < maxAttempts
-        if (attempts == maxAttempts) {
-          logger.fatal("Max number of attempts reached requesting following!\nFinishing...")
-          beforeExit
-          System.exit(1)
-        }
-      }
-      else {
-        if(!isValidUser(user, minrecipes)){
-          val usersList = potUsers.get.filter(isValidUser(_, minrecipes))
-          var vuser = user
-          val stop = false
-          var i = 0
-          while(!stop){
-            vuser = usersList(i)
-            i += 1
-          }
-        }
-
-        users ++= potUsers.get
-        continue = false
-      }
-    }
-
-    extractRecipesForUsers(users)
-
-  }
-
-  def printRecipe(recipe : Recipe) : Unit = {
-
-    csvUsers.writeRow(Utils.flatten(Seq(recipe.id, recipe.author.toSeq(), "author")))
-    recipe.reviews.foreach(review => {
-      csvReviews.writeRow(Utils.flatten(Seq(recipe.id, review.toSeq())))
-      csvUsers.writeRow(Utils.flatten(Seq(recipe.id, review.author.toSeq(), "reviewer")))
-    })
-
-    csvRecipes.writeRow(recipe.toSeq())
-
-    recipe.ingredients.foreach(ingredient => csvIngredients.writeRow(Utils.flatten(Seq(recipe.id, ingredient.toSeq()))))
-
-    recipe.steps.foreach({case (number, text) => csvSteps.writeRow(Seq(recipe.id, number, text))})
-
-    if(recipe.nutritionInfo.isDefined)
-      csvNutrition.writeRow(Utils.flatten(Seq(recipe.id, recipe.nutritionInfo.get.toSeq())))
-  }
-
-  def extractUserFollowing(user : User, inCSVDelimiter : String, pagesize : Int, maxAttempts : Int, delay : Long) : Seq[User] = {
-    val id = user.id
-    var continue = true
-    var attempts = 0
-    while(continue) {
-      val potUsers = Extractor.extractFollowing(id, connectionProperties, inCSVDelimiter, pagesize, 1)
-      if (potUsers.isEmpty) {
-        logger.error(s"Could not extract followings for id ${id}")
-        attempts += 1
-        Thread.sleep(delay * attempts)
-        continue = attempts < maxAttempts
-        if (attempts == maxAttempts) {
-          logger.fatal("Max number of attempts reached requesting following!\nFinishing...")
-          beforeExit
-          System.exit(1)
-        }
-      }
-      else
-        potUsers.get
-    }
-    null
-  }
-
-  def extractRecipesForUsers(users : Seq[User]) = {
-    users.foreach(user => {
-
-    })
-  }
-
-  def isValidUser(user : User, threshold : Int) : Boolean = {
-    (user.recipeCount + user.madeitCount + user.favCount) >= threshold
-  }
-
-  def printHelp = {
-    System.err.println("Wrong parameters: try RecipeExtractor <config_path> <seed_file> <from_scractch> [<status_file>]")
-  }
-
-  def beforeExit = {
-    CSVManager.closeCSVWriter(csvAuthors)
-    CSVManager.closeCSVWriter(csvUsers)
-    CSVManager.closeCSVWriter(csvRecipes)
-    CSVManager.closeCSVWriter(csvIngredients)
-    CSVManager.closeCSVWriter(csvReviews)
-    CSVManager.closeCSVWriter(csvSteps)
-    CSVManager.closeCSVWriter(csvNutrition)
-    CSVManager.closeCSVWriter(csvRel)
-    CSVManager.closeCSVReader(csvSeeds)
-  }
-  */
 }

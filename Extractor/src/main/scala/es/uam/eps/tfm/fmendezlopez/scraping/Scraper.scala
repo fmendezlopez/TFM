@@ -1,5 +1,7 @@
 package es.uam.eps.tfm.fmendezlopez.scraping
 
+import java.io.File
+import java.time.Duration
 import java.util.{Properties, StringTokenizer}
 
 import es.uam.eps.tfm.fmendezlopez.dto._
@@ -274,7 +276,7 @@ object Scraper extends Logging{
       val ingredient = json.optJSONObject(i)
       if(ingredient != null) {
         val id = ingredient.getInt("ingredientID")
-        val displayValue = ingredient.getString("displayValue")
+        val displayValue = ingredient.getString("displayValue").replace(csvSeparator, " ")
         val amount = ingredient.getDouble("grams")
         val ingr = new Ingredient
         ingr.id_=(id)
@@ -443,17 +445,18 @@ object Scraper extends Logging{
     val mainJSON : JSONObject = if(input.isLeft) new JSONObject(input.left.get) else input.right.get
     val user = new User
     user.id_=(mainJSON.getLong("userID"))
-    user.name_=(mainJSON.getString("name"))
+    user.name_=(mainJSON.getString("name").replace(csvDelimiter, " "))
     user.followerCount_=(mainJSON.getInt("followersCount"))
     user.followingCount_=(mainJSON.getInt("followingCount"))
     user.madeitCount=(mainJSON.getInt("madeRecipesCount"))
     user.favCount=(mainJSON.getInt("favoritesCount"))
     user.ratingCount_=(mainJSON.getInt("ratingsCount"))
     user.recipeCount_=(mainJSON.getInt("personalRecipeSharedCount"))
-    user.city_=(mainJSON.optString("city", ""))
-    user.region_=(mainJSON.optString("region", ""))
-    user.country_=(mainJSON.optString("country", ""))
-    user.handle_=(mainJSON.getString("handle"))
+    user.reviewCount_=(mainJSON.getInt("reviewsCount"))
+    user.city_=(mainJSON.optString("city", "").replace(csvDelimiter, " "))
+    user.region_=(mainJSON.optString("region", "").replace(csvDelimiter, " "))
+    user.country_=(mainJSON.optString("country", "").replace(csvDelimiter, " "))
+    user.handle_=(mainJSON.getString("handle").replace(csvDelimiter, " "))
     user.profileUrl_=(s"${properties.getString("allrecipes.url.base")}${mainJSON.getString("profileUrl")}")
     user
   }
@@ -791,40 +794,8 @@ object Scraper extends Logging{
     StringEscapeUtils.unescapeHtml4(string).trim
   }
   def parseTime(time : String) : Int = {
-    var i = 0
-    val chars = time.toCharArray
-    var continue = true
-    while(continue){
-      val char = chars(i)
-      continue = !chars(i + 1).isDigit
-      i += 1
-    }
-    continue = true
-    var hours_str = ""
-    var mins_str = ""
-    while(continue){
-      val char = chars(i)
-      hours_str += char
-      continue = chars(i + 1).isDigit
-      i += 1
-    }
-    if(chars(i) == 'H' && time.isDefinedAt(i+1)){
-      i += 1
-      continue = true
-      while(continue){
-        val char = chars(i)
-        mins_str += char
-        i += 1
-        continue = i < chars.length - 1
-      }
-    }
-    else{
-      mins_str = hours_str
-      hours_str = "0"
-    }
-    val hours = hours_str.toInt * 60
-    val mins = mins_str.toInt
-    hours + mins
+    val duration : Duration = Duration.parse(time)
+    (duration.getSeconds / 60).toInt
   }
 
   def scrapeRecipeKeyList(html : String, maxrecipes : Int) : Option[Seq[String]] = {
@@ -1155,6 +1126,198 @@ object Scraper extends Logging{
     result.totalTime_=(total_time)
     result.ingredientsnumber_=(ingredients_number)
     result.stepsnumber_=(steps_number)
+    Some(result)
+  }
+
+  def scrapeSaveurURLs(html : File, base_url : String, maxrecipes : Int) : Seq[String] = {
+    var result : Seq[String] = Seq()
+    val browser = JsoupBrowser()
+    val doc = browser.parseFile(html)
+    val div = doc >> element("div.results_items_wrap")
+    val elements = div >> elementList("div.result_item")
+    val it = elements.iterator
+    var continue = true
+    var nrecipes = 0
+    while(continue){
+      if(it.hasNext){
+        val el = it.next()
+        val img = el >> element("div.result_image")
+        val a = img >> element("a")
+        result :+= a.attr("href")
+        nrecipes += 1
+        continue = nrecipes < maxrecipes
+      }
+      else continue = false
+    }
+    result
+  }
+
+  def scrapeSaveurRecipe(html : String, delimiter : Char) : Option[SaveurRecipe] = {
+    val result : SaveurRecipe = new SaveurRecipe()
+    val browser = JsoupBrowser()
+    val doc = browser.parseString(html)
+    val name = (doc >> element("h1")).innerHtml.replace(delimiter, ' ')
+    val divs_time = doc >> elementList("div.cook-time")
+    var time = 0
+    if(!divs_time.isEmpty) {
+      val div_time = divs_time.head
+      time = parseTime((div_time >> element("meta")).attr("content"))
+    }
+    val ingredients : Seq[String] = (doc >> elementList("div.ingredient")).map(_.text.trim.replace(delimiter, ' '))
+    var i = 0
+    val steps : Seq[(Int, String)] = (doc >> elementList("div.instruction")).map({el =>
+      i += 1
+      (i, el.text.trim.replace(delimiter, ' '))
+    })
+    result.name_=(name)
+    result.prepTime_=(time)
+    result.cookTime_=(time)
+    result.totalTime_=(time)
+    result.ingredients_=(ingredients)
+    result.ingredientsnumber_=(ingredients.length)
+    result.steps_=(steps)
+    result.stepsnumber_=(steps.length)
+    Some(result)
+  }
+
+  def scrapeChowhoundURLs(html : File, maxrecipes : Int) : Seq[String] = {
+    var result : Seq[String] = Seq()
+    val browser = JsoupBrowser()
+    val doc = browser.parseFile(html)
+    val main_div = doc >> element("div.fr_res")
+    val elements = main_div >> elementList("div.freyja_box.freyja_box7.fr_box_rechub")
+    val it = elements.iterator
+    var continue = true
+    var nrecipes = 0
+    while(continue){
+      if(it.hasNext){
+        val el = it.next()
+        val ls = el >> elementList("a")
+        if(!ls.isEmpty){
+          val a = ls.head
+          result :+= a.attr("href")
+          nrecipes += 1
+        }
+        continue = nrecipes < maxrecipes
+      }
+      else continue = false
+    }
+    result
+  }
+
+  def scrapeChowhoundRecipe(html : String, delimiter : Char) : Option[ChowhoundRecipe] = {
+    def scrapeTime(str : String) : Int = {
+      def isAllDigits(x: String) = x forall Character.isDigit
+      val tokenizer = new StringTokenizer(str, " ")
+      var continue = true
+      var time = 0
+      do{
+        val token = tokenizer.nextToken()
+        if(isAllDigits(token)){
+          if(tokenizer.hasMoreTokens){
+            val next = tokenizer.nextToken().toLowerCase
+            if(next.contains("hr")){
+              time += token.toInt * 60
+            }
+            else if(next.contains("min")){
+              time += token.toInt
+            }
+          }
+          else{
+            time += token.toInt
+          }
+        }
+        continue = tokenizer.hasMoreTokens
+      }while(continue)
+      time
+    }
+    val result : ChowhoundRecipe = new ChowhoundRecipe()
+    val browser = JsoupBrowser()
+    val doc = browser.parseString(html)
+    val name = (doc >> element("h1")).innerHtml.replace(delimiter, ' ')
+    val spans_time = doc >> elementList("span.frr_totaltime")
+    var total_time = 0
+    var cook_time = 0
+    if(!spans_time.isEmpty){
+      parseTime((spans_time.head >> element("time")).attr("content"))
+      if(spans_time.length > 1){
+        val active_time = spans_time.tail.head >> element("time")
+        cook_time = scrapeTime(active_time.text)
+      }
+      else{
+        cook_time = total_time
+      }
+    }
+    val prep_time = cook_time.min(total_time)
+    val ingredients : Seq[String] = (doc >> elementList("li[itemprop=ingredients]")).map(_.text.trim.replace(delimiter, ' '))
+    var i = 0
+    val steps_div = doc >> element("div[itemprop=recipeInstructions]")
+    val steps : Seq[(Int, String)] = (steps_div >> elementList("li")).map({el =>
+      i += 1
+      (i, el.text.trim.replace(delimiter, ' '))
+    })
+    result.name_=(name)
+    result.prepTime_=(prep_time)
+    result.cookTime_=(cook_time)
+    result.totalTime_=(total_time)
+    result.ingredients_=(ingredients)
+    result.ingredientsnumber_=(ingredients.length)
+    result.steps_=(steps)
+    result.stepsnumber_=(steps.length)
+    Some(result)
+  }
+
+  def scrapeChowhoundRecipe(html : File, delimiter : Char) : Option[ChowhoundRecipe] = {
+    def scrapeTime(str : String) : Int = {
+      def isAllDigits(x: String) = x forall Character.isDigit
+      val tokenizer = new StringTokenizer(str, " ")
+      var continue = true
+      var time = 0
+      do{
+        val token = tokenizer.nextToken()
+        if(isAllDigits(token)){
+          val next = tokenizer.nextToken().toLowerCase
+          if(next.contains("hr")){
+            time += token.toInt * 60
+          }
+          else if(next.contains("min")){
+            time += token.toInt
+          }
+        }
+        continue = tokenizer.hasMoreTokens
+      }while(continue)
+      time
+    }
+    val result : ChowhoundRecipe = new ChowhoundRecipe()
+    val browser = JsoupBrowser()
+    val doc = browser.parseFile(html)
+    val name = (doc >> element("h1")).innerHtml.replace(delimiter, ' ')
+    val spans_time = doc >> elementList("span.frr_totaltime")
+    val total_time = parseTime((spans_time.head >> element("time")).attr("content"))
+    var cook_time = 0
+    if(spans_time.length > 1){
+      val active_time = spans_time.tail.head >> element("time")
+      cook_time = scrapeTime(active_time.text)
+    }
+    else{
+      cook_time = total_time
+    }
+    val prep_time = cook_time.min(total_time)
+    val ingredients : Seq[String] = (doc >> elementList("li[itemprop=ingredients]")).map(_.text.trim.replace(delimiter, ' '))
+    var i = 0
+    val steps_div = doc >> element("div[itemprop=recipeInstructions]")
+    val steps : Seq[(Int, String)] = (steps_div >> elementList("li")).map({el =>
+      i += 1
+      (i, el.text.trim.replace(delimiter, ' '))
+    })
+    result.name_=(name)
+    result.prepTime_=(prep_time)
+    result.cookTime_=(cook_time)
+    result.totalTime_=(total_time)
+    result.ingredients_=(ingredients)
+    result.ingredientsnumber_=(ingredients.length)
+    result.steps_=(steps)
+    result.stepsnumber_=(steps.length)
     Some(result)
   }
 }

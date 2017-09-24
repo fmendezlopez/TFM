@@ -13,6 +13,7 @@ class User {
   private var _favCount : Int = 0
   private var _ratingCount : Int = 0
   private var _recipeCount : Int = 0
+  private var _reviewCount : Int = 0
   private var _city : String = ""
   private var _region : String = ""
   private var _country : String = ""
@@ -27,6 +28,7 @@ class User {
   def favCount = _favCount
   def ratingCount = _ratingCount
   def recipeCount = _recipeCount
+  def reviewCount = _reviewCount
   def city = _city
   def region = _region
   def country = _country
@@ -41,6 +43,7 @@ class User {
   def favCount_= (value : Int) = _favCount = value
   def ratingCount_= (value : Int) = _ratingCount = value
   def recipeCount_= (value : Int) = _recipeCount = value
+  def reviewCount_= (value : Int) = _reviewCount = value
   def city_= (value : String) = _city = value
   def region_= (value : String) = _region = value
   def country_= (value : String) = _country = value
@@ -48,6 +51,6 @@ class User {
   def profileUrl_= (value : String) = _profileUrl = value
 
   def toSeq : Seq[Any] = {
-    Seq(_id, _name, _followerCount, _followingCount, _madeitCount, _favCount, _ratingCount, _recipeCount, _city, _region, _country, _handle, _profileUrl)
+    Seq(_id, _name, _followerCount, _followingCount, _madeitCount, _favCount, _ratingCount, _recipeCount, _reviewCount, _city, _region, _country, _handle, _profileUrl)
   }
 }

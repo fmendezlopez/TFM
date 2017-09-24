@@ -9,6 +9,11 @@ import org.apache.commons.configuration2.Configuration
 import org.json.JSONObject
 import org.jsoup.{Connection, Jsoup, UnsupportedMimeTypeException}
 
+import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
+
+import scala.collection.parallel.mutable.ParArray
+
 /**
   * Created by Francisco on 14/04/2017.
   */
@@ -244,7 +249,7 @@ object HttpManager extends Logging{
     newProps.replace("ar_user", map("ar_user"))
     newProps.replace("ar_session", map("ar_session"))
     newProps.replace("auth-token", s"${properties.getString("general.scraping.auth.token.prefix")} ${connectionProperties.getProperty("ar_token")}")
-    logger.debug(s"Initial NEW-TOKEN: ${newProps.getProperty("auth-token")}")
+    logger.debug(s"NEW-TOKEN: ${newProps.getProperty("auth-token")}")
     Some(newProps)
   }
   @throws(classOf[ScrapingDetectionException])
@@ -741,7 +746,8 @@ object HttpManager extends Logging{
   @throws(classOf[ScrapingDetectionException])
   def requestURL(url : String, connectionProperties  : Properties = connectionProperties):Option[String] ={
     val connection = Jsoup.connect(url)
-    connection.followRedirects(connectionProperties.getProperty("follow-redirects").toBoolean)
+    //connection.followRedirects(connectionProperties.getProperty("follow-redirects").toBoolean)
+    connection.followRedirects(true)
     connection.userAgent(selectUserAgent)
     connection.timeout(connectionProperties.getProperty("timeout").toInt)
     connection.maxBodySize(connectionProperties.getProperty("max-body-size").toInt)

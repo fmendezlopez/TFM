@@ -3,11 +3,14 @@ package es.uam.eps.tfm.fmendezlopez
 import java.io.File
 import java.sql.{Date, SQLException}
 import java.text.{DateFormat, SimpleDateFormat}
+import java.time.Duration
+import java.time.temporal.TemporalUnit
 import java.util.regex.Pattern
 import java.util.{Calendar, Locale, StringTokenizer}
 
 import org.json.{JSONArray, JSONObject}
 import es.uam.eps.tfm.fmendezlopez.dao._
+import es.uam.eps.tfm.fmendezlopez.scraping.Scraper
 import es.uam.eps.tfm.fmendezlopez.utils.CSVManager
 import net.ruippeixotog.scalascraper.browser.JsoupBrowser
 import org.jsoup.Jsoup
@@ -24,8 +27,9 @@ object Prueba {
   def main(args: Array[String]): Unit = {
     //println(detectRecipeID("http://allrecipes.com/recipe/255587/naked-cherry-tomato-salad/"))
     //println(detectRecipeID("http://allrecipes.com/recipe/naked-cherry-tomato-salad/44534543"))
-    val str = "dd34/7.5,2"
-    println(str.replaceAll("[^\\d]", ""))
+    var str = "asfa|fsds|fds"
+    println(str.replace("|", " "))
+    //val res = Scraper.scrapeChowhoundRecipe(file, '|')
   }
 
   def detectRecipeID(url : String) : Option[Long] = {

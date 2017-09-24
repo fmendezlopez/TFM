@@ -241,108 +241,125 @@ object Extractor extends Logging{
       result
     }
 
-    def getRecipes(author_id : Long, list : String, nrecipes : Int, scraped : Set[Long]) : (Seq[Recipe], Set[Long]) = {
+    def getRecipes(author_id : Long, list : String, nrecipes : Int, scraped : Set[Long], maxrecipes : Int) : (Seq[Recipe], Set[Long]) = {
+      logger.debug(s"Getting recipes for list ${list}")
+      def ceil10(n : Int) : Int = {
+        (10 * scala.math.ceil(n.toDouble / 10.toDouble)).toInt
+      }
+
       var new_recipes : Seq[Recipe] = Seq()
       var repeated_recipes : Set[Long] = Set()
       val delay = connectionProperties.getProperty("delay-recipe").toLong
       val nrecipes_delay = connectionProperties.getProperty("nrecipes").toLong
       val delay_nrecipes = connectionProperties.getProperty("delay-nrecipes").toLong
-      val ret = HttpManager.requestUserRecipes(author_id, connectionProperties, nrecipes, 1, list)
-      if(ret.isEmpty){
-        logger.error(s"Could not retrieve user recipe list ${list} for id ${author_id}")
-      }
-      else{
-        val lst = if(list == "fav") scrapeFavList(ret.get) else extRecipes(ret.get)
-        var err = false
-        var recipes = 0
-
-        lst.foreach({case(id, web, api) => {
-          logger.debug(s"Processing recipe with id ${id}")
-          var exists = false
-          //DB check
-          try {
-            exists = daoDB.existsRecipe(id.toString)
-          } catch {
-            case sql : SQLException =>
-              logger.error(sql.getMessage)
+      var retry = false
+      var page = 1
+      val pagesize = ceil10(nrecipes)
+      val maxpages = math.ceil(maxrecipes.toDouble / pagesize).toInt
+      do{
+        val ret = HttpManager.requestUserRecipes(author_id, connectionProperties, pagesize, page, list)
+        if(ret.isEmpty){
+          logger.error(s"Could not retrieve user recipe list ${list} for id ${author_id}")
+        }
+        else{
+          val lst = if(list == "fav") scrapeFavList(ret.get) else extRecipes(ret.get)
+          var recipes = 0
+          if(lst.isEmpty){
+            logger.warn(s"List ${list} seems to be empty for user ${author_id}")
+            retry = false
           }
-
-          if(exists || repeated_recipes.contains(id) || scraped.contains(id)){
-            logger.debug(s"Recipe with id ${id} has already been scraped")
-            if(!repeated_recipes.contains(id))
-              repeated_recipes += id
-          }
-          else {
-            val potRecipe = extractRecipe(author.id, web, api, connectionProperties, csvDelimiter)
-            recipes += 1
-            if (recipes % nrecipes_delay == 0) {
-              logger.info(s"Extracted ${recipes} recipes. Sleeping...")
-              Thread.sleep(delay_nrecipes)
-            }
-            else
-              Thread.sleep(delay)
-            if (potRecipe.isEmpty) {
-              err = true
-            }
-            else {
-              /*
+          else{
+            val it = lst.iterator
+            do{
+              val (id, web, api) = it.next()
+              logger.debug(s"Processing recipe with id ${id}")
+              var exists = false
+              //DB check
               try {
-                logger.debug(s"Inserting recipe ${id} into DB")
-                daoDB.insertRecipe(potRecipe.get.id.toString)
+                exists = daoDB.existsRecipe(id.toString)
               } catch {
                 case sql : SQLException =>
-                  logger.fatal(sql.getMessage)
+                  logger.error(sql.getMessage)
               }
-              */
-              new_recipes :+= potRecipe.get
-              repeated_recipes += id
-            }
-          }
-        }})
-        /*
-        result = lst.flatMap({case(id, web, api) => {
-          //errores sql el insertar en recetas y csv auxliar para usuario por receta
 
-          var exists = false
-          //DB check
-          try {
-            exists = daoDB.existsRecipe(id.toString)
-          } catch {
-            case sql : SQLException =>
-              logger.fatal(sql.getMessage)
+              if(exists || repeated_recipes.contains(id) || scraped.contains(id)){
+                logger.debug(s"Recipe with id ${id} has already been scraped")
+                if(!repeated_recipes.contains(id))
+                  repeated_recipes += id
+                recipes += 1
+              }
+              else {
+                val potRecipe = extractRecipe(author.id, web, api, connectionProperties, csvDelimiter)
+                if (recipes != 0 && recipes % nrecipes_delay == 0) {
+                  logger.info(s"Extracted ${recipes} recipes. Sleeping...")
+                  Thread.sleep(delay_nrecipes)
+                }
+                else
+                  Thread.sleep(delay)
+                if (potRecipe.isDefined) {
+                  new_recipes :+= potRecipe.get
+                  //repeated_recipes += id
+                  recipes += 1
+                }
+              }
+            }while(it.hasNext && recipes < nrecipes)
+            retry = recipes < nrecipes && page < maxpages
           }
-
-          if(exists){
-            logger.info(s"Recipe with id ${id} has already been processed")
-            Seq()
-          }
-          else {
-            val potRecipe = extractRecipe(author.id, web, api, connectionProperties, csvDelimiter)
-            recipes += 1
-            if (recipes % nrecipes_delay == 0) {
-              logger.info(s"Extracted ${recipes} recipes. Sleeping...")
-              Thread.sleep(delay_nrecipes)
+          /*
+          lst.foreach({case(id, web, api) => {
+            logger.debug(s"Processing recipe with id ${id}")
+            var exists = false
+            //DB check
+            try {
+              exists = daoDB.existsRecipe(id.toString)
+            } catch {
+              case sql : SQLException =>
+                logger.error(sql.getMessage)
             }
-            else
-              Thread.sleep(delay)
-            if (potRecipe.isEmpty) {
-              err = true
-              Seq()
+
+            if(exists || repeated_recipes.contains(id) || scraped.contains(id)){
+              logger.debug(s"Recipe with id ${id} has already been scraped")
+              if(!repeated_recipes.contains(id))
+                repeated_recipes += id
             }
             else {
-              Seq(potRecipe.get)
+              val potRecipe = extractRecipe(author.id, web, api, connectionProperties, csvDelimiter)
+              recipes += 1
+              if (recipes % nrecipes_delay == 0) {
+                logger.info(s"Extracted ${recipes} recipes. Sleeping...")
+                Thread.sleep(delay_nrecipes)
+              }
+              else
+                Thread.sleep(delay)
+              if (potRecipe.isEmpty) {
+                err = true
+              }
+              else {
+                /*
+                try {
+                  logger.debug(s"Inserting recipe ${id} into DB")
+                  daoDB.insertRecipe(potRecipe.get.id.toString)
+                } catch {
+                  case sql : SQLException =>
+                    logger.fatal(sql.getMessage)
+                }
+                */
+                new_recipes :+= potRecipe.get
+                repeated_recipes += id
+              }
             }
-          }
-        }})
-        */
-      }
+          }})
+          */
+        }
+        page += 1
+      }while(retry)
+      logger.debug(s"Got ${new_recipes.length} new recipes and ${repeated_recipes.size}")
       (new_recipes, repeated_recipes)
     }
 
     var map_new : Map[String, Seq[Recipe]] = Map()
     var map_repeated : Map[String, Seq[Long]] = Map()
     val map = getRecipesExtraction(author, maxrecipes)
-    var left = maxrecipes
     val delay = connectionProperties.getProperty("delay-recipe-list").toLong
 
     var new_recipes_recipes : Set[Recipe] = Set()
@@ -355,19 +372,60 @@ object Extractor extends Logging{
     var repeated_recipes_fav : Set[Long] = Set()
 
     if(map("recipes") > 0){
-      val ret = getRecipes(author.id, "recipes", map("recipes").min(left), Set())
+      val ret = getRecipes(author.id, "recipes", map("recipes"), Set(), author.recipeCount)
       new_recipes_recipes ++= ret._1
       repeated_recipes_recipes ++= ret._2
+      val total = new_recipes_recipes.size + repeated_recipes_recipes.size
+      if(total < map("recipes")){
+        val diff = map("recipes") - total
+        logger.debug(s"Extracted less recipes from user. Added ${diff} recipes to madeit.")
+        map("madeit") += diff
+      }
       //map_new += "recipes" -> ret._1
       //map_repeated += "recipes" -> ret._2
-      left -= (new_recipes_recipes.size + repeated_recipes_recipes.size)
+      //left -= (new_recipes_recipes.size + repeated_recipes_recipes.size)
+      if(new_recipes_recipes.size > 0) {
+        logger.info("Extracted user recipes. Sleeping...")
+        Thread.sleep(delay)
+      }
     }
+    if(map("madeit") > 0){
+      val ret = getRecipes(author.id, "madeit", map("madeit"), repeated_recipes_recipes, author.madeitCount)
+      new_recipes_madeit ++= ret._1
+      repeated_recipes_madeit ++= ret._2
+      val total = new_recipes_madeit.size + repeated_recipes_madeit.size
+      if(total < map("madeit")){
+        val diff = map("madeit") - total
+        logger.debug(s"Extracted less madeit from user. Added ${diff} recipes to fav.")
+        map("fav") += diff
+      }
+      //map_new += "recipes" -> ret._1
+      //map_repeated += "recipes" -> ret._2
+      //left -= (new_recipes_recipes.size + repeated_recipes_recipes.size)
+      if(new_recipes_madeit.size > 0) {
+        logger.info("Extracted user madeit. Sleeping...")
+        Thread.sleep(delay)
+      }
+    }
+    if(map("fav") > 0){
+      val ret = getRecipes(author.id, "fav", map("fav"), repeated_recipes_recipes ++ repeated_recipes_madeit, author.favCount)
+      new_recipes_fav ++= ret._1
+      repeated_recipes_fav ++= ret._2
+      //map_new += "recipes" -> ret._1
+      //map_repeated += "recipes" -> ret._2
+      //left -= (new_recipes_recipes.size + repeated_recipes_recipes.size)
+      if(new_recipes_fav.size > 0) {
+        logger.info("Extracted user fav. Sleeping...")
+        Thread.sleep(delay)
+      }
+    }
+    /*
     if(left > 0){
       logger.info("Extracted user recipes. Sleeping...")
       Thread.sleep(delay)
 
       if(map("madeit") > 0){
-        val ret = getRecipes(author.id, "madeit", map("madeit").min(left), repeated_recipes_recipes)
+        val ret = getRecipes(author.id, "madeit", map("madeit"), repeated_recipes_recipes)
         new_recipes_madeit ++= ret._1
         repeated_recipes_madeit ++= ret._2
         left -= (new_recipes_madeit.size + repeated_recipes_madeit.size)
@@ -377,13 +435,14 @@ object Extractor extends Logging{
         Thread.sleep(delay)
 
         if(map("fav") > 0){
-          val ret = getRecipes(author.id, "fav", map("fav").min(left), repeated_recipes_recipes ++ repeated_recipes_madeit)
+          val ret = getRecipes(author.id, "fav", map("fav"), repeated_recipes_recipes ++ repeated_recipes_madeit)
           new_recipes_fav ++= ret._1
           repeated_recipes_fav ++= ret._2
           left -= (new_recipes_fav.size + repeated_recipes_fav.size)
         }
       }
     }
+    */
     map_new += "recipes" -> new_recipes_recipes.toSeq
     map_new += "madeit" -> new_recipes_madeit.toSeq
     map_new += "fav" -> new_recipes_fav.toSeq
@@ -462,11 +521,7 @@ object Extractor extends Logging{
 
   def getRecipesExtraction(user : User, maxrecipes : Int) : mutable.Map[String, Int] = {
 
-    def ceil10(n : Int) : Int = {
-      (10 * scala.math.ceil(n.toDouble / 10.toDouble)).toInt
-    }
-
-    var result: mutable.Map[String, Int] = mutable.Map(
+    val result: mutable.Map[String, Int] = mutable.Map(
       "recipes" -> 0,
       "madeit" -> 0,
       "fav" -> 0
@@ -477,19 +532,18 @@ object Extractor extends Logging{
     }
     else {
       curr = user.recipeCount
-      result("recipes") = ceil10(curr)
+      result("recipes") = curr
       var left = maxrecipes - curr
       if (user.madeitCount >= left) {
-        result("madeit") = ceil10(left)
+        result("madeit") = left
       }
       else {
         curr += user.madeitCount
-        result("madeit") = ceil10(curr)
+        result("madeit") = user.madeitCount
         left = maxrecipes - curr
-        result("fav") = ceil10(left)
+        result("fav") = left.min(user.favCount)
       }
     }
     result
   }
-
 }
