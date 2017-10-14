@@ -2,7 +2,7 @@ package es.uam.eps.tfm.fmendezlopez.utils
 
 import java.io._
 
-import com.github.tototoshi.csv.{CSVReader, CSVWriter, DefaultCSVFormat}
+import com.github.tototoshi.csv.{CSVFormat, CSVReader, CSVWriter, DefaultCSVFormat, QUOTE_MINIMAL, Quoting}
 
 /**
   * Created by Francisco on 11/04/2017.

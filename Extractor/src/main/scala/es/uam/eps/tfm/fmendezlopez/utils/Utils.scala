@@ -35,6 +35,25 @@ object Utils extends Logging{
     s"${prefix}${infix}${File.separator}${substageNumber}${suffix}"
   }
 
+  def detectIDinURL(url: String, delimiter: String) : Option[Long] = {
+    val tokenizer = new StringTokenizer(url, delimiter)
+    var continue = true
+    var number : Option[Long] = None
+    if(tokenizer.countTokens() == 0)
+      return None
+    do {
+      val token = tokenizer.nextToken
+      try{
+        number = Some(token.toLong)
+      } catch{
+        case nfe : NumberFormatException =>
+          number = None
+      }
+      continue = number.isEmpty && tokenizer.hasMoreTokens
+    } while(continue)
+    number
+  }
+
   def deduceRecipeID(prior_id : Long, weburl : String, apiurl : String) : Long = {
     var id : Long = -1
     if(Recipe.isValidRecipeID(prior_id)){
@@ -131,8 +150,8 @@ object Utils extends Logging{
     case e => Seq(e)
   }
 
-  def compoundRecipeURL(id : String, properties : Configuration) : String = {
-    s"${properties.getString("allrecipes.url.base")}/${id}"
+  def compoundRecipeURL(id : String, baseURL: String) : String = {
+    s"${baseURL}/${id}"
   }
 
   def getInputFiles(path : String) : Seq[File] = {

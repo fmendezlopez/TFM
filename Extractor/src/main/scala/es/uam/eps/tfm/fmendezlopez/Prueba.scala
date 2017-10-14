@@ -25,14 +25,31 @@ import net.ruippeixotog.scalascraper.scraper.ContentExtractors._
 object Prueba {
 
   def main(args: Array[String]): Unit = {
-    //println(detectRecipeID("http://allrecipes.com/recipe/255587/naked-cherry-tomato-salad/"))
-    //println(detectRecipeID("http://allrecipes.com/recipe/naked-cherry-tomato-salad/44534543"))
-    var str = "asfa|fsds|fds"
-    println(str.replace("|", " "))
-    //val res = Scraper.scrapeChowhoundRecipe(file, '|')
+    val str = "fdfs\"cscsd\r\ndasdas"
+    println(str)
+    println("\n\n")
+    println(str.replaceAll("(\n|\r|\")", ""))
   }
 
-  def detectRecipeID(url : String) : Option[Long] = {
+  def detectIDinURL(url : String, sep: String) : Option[Long] = {
+    val tokenizer = new StringTokenizer(url, sep)
+    var continue = true
+    var number : Option[Long] = None
+    do {
+      val token = tokenizer.nextToken
+      println(token)
+      try{
+        number = Some(token.toLong)
+      } catch{
+        case nfe : NumberFormatException =>
+          number = None
+      }
+      continue = number.isEmpty && tokenizer.hasMoreTokens
+    } while(continue)
+    number
+  }
+
+  def detectRecipeID(url : String, sep: String) : Option[Long] = {
     val tokenizer = new StringTokenizer(url)
     tokenizer.nextToken(".")
     var continue = true

@@ -11,7 +11,8 @@ class Recipe {
 
   private var _id : Long = -1
   private var _title : String = ""
-  private var _url : String = ""
+  private var _apiurl : String = ""
+  private var _weburl : String = ""
   private var _author : Author = new Author
   private var _rating : Double = 0.0
   private var _ratingCount : Int = 0
@@ -25,13 +26,14 @@ class Recipe {
   private var _cookTime : Int = 0
   private var _totalTime : Int = 0
   private var _steps : Seq[(Int, String)] = Seq()
-  private var _notes : mutable.Map[String, String] = mutable.Map()
+  private var _notes : Seq[String] = Seq()
   private var _reviews : Seq[Review] = Seq()
   private var _category : RecipeCategory = null
 
   def id = _id
   def title = _title
-  def url = _url
+  def apiurl = _apiurl
+  def weburl = _weburl
   def author = _author
   def rating = _rating
   def ratingCount = _ratingCount
@@ -51,7 +53,8 @@ class Recipe {
 
   def id_= (value : Long) : Unit = _id = value
   def title_= (value : String) : Unit = _title = value
-  def url_= (value : String) : Unit = _url = value
+  def apiurl_= (value : String) : Unit = _apiurl = value
+  def weburl_= (value : String) : Unit = _weburl = value
   def author_= (value : Author) : Unit = _author = value
   def rating_= (value : Double) : Unit = _rating = value
   def ratingCount_= (value : Int) : Unit = _ratingCount = value
@@ -65,14 +68,13 @@ class Recipe {
   def cookTime_= (value : Int) : Unit = _cookTime = value
   def totalTime_= (value : Int) : Unit = _totalTime = value
   def steps_= (value : Seq[(Int, String)]) : Unit = _steps = value
-  def notes_= (value : mutable.Map[String, String]) : Unit = _notes = value
+  def notes_= (value : Seq[String]) : Unit = _notes = value
   def reviews_= (value : Seq[Review]) : Unit = _reviews = value
   def category_= (value : RecipeCategory) : Unit = _category = value
 
   def toSeq() : Seq[Any] = {
-    var result : Seq[Any] = Seq(_id, category.id, _author.id, _title, _url, _rating, _ratingCount, _reviewCount, _madeit, _description, _servings, _prepTime, _cookTime, _totalTime)
-    notes.values.foreach(value => result :+= value)
-    result
+    var result : Seq[Any] = Seq(_id, category.id, _title, _weburl, _rating, _ratingCount, _reviewCount, _madeit, _description, _servings, _prepTime, _cookTime, _totalTime)
+    result ++ notes
   }
 
   def canEqual(other: Any): Boolean = other.isInstanceOf[Recipe]

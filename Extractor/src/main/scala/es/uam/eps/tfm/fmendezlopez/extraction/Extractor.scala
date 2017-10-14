@@ -53,11 +53,11 @@ object Extractor extends Logging{
   }
   */
 
-  def extractRecipe(author_id : Long, webURL : String, apiURL : String, connectionProperties : Properties, csvDelimiter : String): Option[Recipe] ={
+  def extractRecipe(author_id: Long, webURL: String, apiURL: String, connectionProperties: Properties, csvDelimiter: String): Option[Recipe] ={
 
     try{
       logger.debug(s"Extracting recipe with webURL ${webURL} and apiURL ${apiURL}")
-      val html_str = if(webURL.isEmpty) Some("") else HttpManager.requestRecipeWebURL(webURL, connectionProperties)
+      val html_str = if(webURL.isEmpty) None else HttpManager.requestRecipeWebURL(webURL, connectionProperties)
       if(html_str.isEmpty){
         logger.error(s"Could not retrieve recipe with url ${webURL} from WEB")
         return None
@@ -67,7 +67,53 @@ object Extractor extends Logging{
         logger.error(s"Could not retrieve recipe with url ${apiURL} from API")
         return None
       }
-      Some(Scraper.scrapeRecipe(author_id, json_str.get, html_str.get, csvDelimiter))
+      Some(Scraper.scrapeRecipe(author_id, json_str.get, html_str.get, csvDelimiter, connectionProperties.getProperty("default-category").toLong))
+    } catch {
+      case sde : ScrapingDetectionException =>
+        logger.error(sde)
+        return None
+
+      case ale : APILoginException =>
+        logger.error(ale)
+        return None
+
+      case aae : APIAuthorizationException =>
+        logger.error(aae)
+        val newProps = HttpManager.resetToken(connectionProperties)
+        if(newProps.isDefined) {
+          val rt = extractRecipe(author_id, webURL, apiURL, newProps.get, csvDelimiter)
+          if(rt.isEmpty)
+            None
+          else
+            rt
+        }
+        else
+          None
+    }
+  }
+
+  def extractRecipe(author_id: Long, recipe_id: Long, apiURL: String, connectionProperties: Properties, csvDelimiter: String): Option[Recipe] ={
+
+    var webURL = ""
+    try{
+      val json_str = HttpManager.requestRecipeAPIURL(apiURL, connectionProperties)
+      if(json_str.isEmpty){
+        logger.error(s"Could not retrieve recipe with url ${apiURL} from API")
+        return None
+      }
+      val mainJSON = new JSONObject(json_str)
+      val links = mainJSON.getJSONObject("links")
+      webURL =
+        if(links.has("recipeUrl") && !links.isNull("recipeUrl")) links.getJSONObject("recipeUrl").getString("href")
+        else Utils.compoundRecipeURL(recipe_id.toString, connectionProperties.getProperty("base-host"))
+
+      logger.debug(s"Extracting recipe with webURL ${webURL} and apiURL ${apiURL}")
+      val html_str = if(webURL.isEmpty) Some("") else HttpManager.requestRecipeWebURL(webURL, connectionProperties)
+      if(html_str.isEmpty){
+        logger.error(s"Could not retrieve recipe with url ${webURL} from WEB")
+        return None
+      }
+      Some(Scraper.scrapeRecipe(author_id, json_str.get, html_str.get, csvDelimiter, connectionProperties.getProperty("default-category").toLong))
     } catch {
       case sde : ScrapingDetectionException =>
         logger.error(sde)
@@ -156,7 +202,6 @@ object Extractor extends Logging{
           None
     }
   }
-
   def extractFollowers(id : Long, connectionProperties : Properties, csvDelimiter : String, nusers : Int) : Option[Seq[User]] = {
     val pagesize = connectionProperties.getProperty("max-pagesize").toInt
     val npages = nusers / pagesize
@@ -256,6 +301,7 @@ object Extractor extends Logging{
       var page = 1
       val pagesize = ceil10(nrecipes)
       val maxpages = math.ceil(maxrecipes.toDouble / pagesize).toInt
+      var recipes = 0
       do{
         val ret = HttpManager.requestUserRecipes(author_id, connectionProperties, pagesize, page, list)
         if(ret.isEmpty){
@@ -263,7 +309,6 @@ object Extractor extends Logging{
         }
         else{
           val lst = if(list == "fav") scrapeFavList(ret.get) else extRecipes(ret.get)
-          var recipes = 0
           if(lst.isEmpty){
             logger.warn(s"List ${list} seems to be empty for user ${author_id}")
             retry = false
@@ -305,55 +350,10 @@ object Extractor extends Logging{
             }while(it.hasNext && recipes < nrecipes)
             retry = recipes < nrecipes && page < maxpages
           }
-          /*
-          lst.foreach({case(id, web, api) => {
-            logger.debug(s"Processing recipe with id ${id}")
-            var exists = false
-            //DB check
-            try {
-              exists = daoDB.existsRecipe(id.toString)
-            } catch {
-              case sql : SQLException =>
-                logger.error(sql.getMessage)
-            }
-
-            if(exists || repeated_recipes.contains(id) || scraped.contains(id)){
-              logger.debug(s"Recipe with id ${id} has already been scraped")
-              if(!repeated_recipes.contains(id))
-                repeated_recipes += id
-            }
-            else {
-              val potRecipe = extractRecipe(author.id, web, api, connectionProperties, csvDelimiter)
-              recipes += 1
-              if (recipes % nrecipes_delay == 0) {
-                logger.info(s"Extracted ${recipes} recipes. Sleeping...")
-                Thread.sleep(delay_nrecipes)
-              }
-              else
-                Thread.sleep(delay)
-              if (potRecipe.isEmpty) {
-                err = true
-              }
-              else {
-                /*
-                try {
-                  logger.debug(s"Inserting recipe ${id} into DB")
-                  daoDB.insertRecipe(potRecipe.get.id.toString)
-                } catch {
-                  case sql : SQLException =>
-                    logger.fatal(sql.getMessage)
-                }
-                */
-                new_recipes :+= potRecipe.get
-                repeated_recipes += id
-              }
-            }
-          }})
-          */
         }
         page += 1
       }while(retry)
-      logger.debug(s"Got ${new_recipes.length} new recipes and ${repeated_recipes.size}")
+      logger.debug(s"Got ${new_recipes.length} new recipes and ${repeated_recipes.size} repeated recipes")
       (new_recipes, repeated_recipes)
     }
 
@@ -371,6 +371,8 @@ object Extractor extends Logging{
     var new_recipes_fav : Set[Recipe] = Set()
     var repeated_recipes_fav : Set[Long] = Set()
 
+    var nextSet: Set[Long] = Set()
+
     if(map("recipes") > 0){
       val ret = getRecipes(author.id, "recipes", map("recipes"), Set(), author.recipeCount)
       new_recipes_recipes ++= ret._1
@@ -381,16 +383,14 @@ object Extractor extends Logging{
         logger.debug(s"Extracted less recipes from user. Added ${diff} recipes to madeit.")
         map("madeit") += diff
       }
-      //map_new += "recipes" -> ret._1
-      //map_repeated += "recipes" -> ret._2
-      //left -= (new_recipes_recipes.size + repeated_recipes_recipes.size)
       if(new_recipes_recipes.size > 0) {
         logger.info("Extracted user recipes. Sleeping...")
         Thread.sleep(delay)
       }
+      nextSet ++= new_recipes_recipes.flatMap(r=>Set(r.id))
     }
     if(map("madeit") > 0){
-      val ret = getRecipes(author.id, "madeit", map("madeit"), repeated_recipes_recipes, author.madeitCount)
+      val ret = getRecipes(author.id, "madeit", map("madeit"), nextSet, author.madeitCount)
       new_recipes_madeit ++= ret._1
       repeated_recipes_madeit ++= ret._2
       val total = new_recipes_madeit.size + repeated_recipes_madeit.size
@@ -406,11 +406,12 @@ object Extractor extends Logging{
         logger.info("Extracted user madeit. Sleeping...")
         Thread.sleep(delay)
       }
+      nextSet ++= new_recipes_madeit.flatMap(r=>Set(r.id))
     }
     if(map("fav") > 0){
-      val ret = getRecipes(author.id, "fav", map("fav"), repeated_recipes_recipes ++ repeated_recipes_madeit, author.favCount)
+      val ret = getRecipes(author.id, "fav", map("fav"), nextSet, author.favCount)
       new_recipes_fav ++= ret._1
-      repeated_recipes_fav ++= ret._2
+
       //map_new += "recipes" -> ret._1
       //map_repeated += "recipes" -> ret._2
       //left -= (new_recipes_recipes.size + repeated_recipes_recipes.size)
@@ -418,31 +419,8 @@ object Extractor extends Logging{
         logger.info("Extracted user fav. Sleeping...")
         Thread.sleep(delay)
       }
+      repeated_recipes_fav ++= ret._2
     }
-    /*
-    if(left > 0){
-      logger.info("Extracted user recipes. Sleeping...")
-      Thread.sleep(delay)
-
-      if(map("madeit") > 0){
-        val ret = getRecipes(author.id, "madeit", map("madeit"), repeated_recipes_recipes)
-        new_recipes_madeit ++= ret._1
-        repeated_recipes_madeit ++= ret._2
-        left -= (new_recipes_madeit.size + repeated_recipes_madeit.size)
-      }
-      if(left > 0){
-        logger.info("Extracted user madeit. Sleeping...")
-        Thread.sleep(delay)
-
-        if(map("fav") > 0){
-          val ret = getRecipes(author.id, "fav", map("fav"), repeated_recipes_recipes ++ repeated_recipes_madeit)
-          new_recipes_fav ++= ret._1
-          repeated_recipes_fav ++= ret._2
-          left -= (new_recipes_fav.size + repeated_recipes_fav.size)
-        }
-      }
-    }
-    */
     map_new += "recipes" -> new_recipes_recipes.toSeq
     map_new += "madeit" -> new_recipes_madeit.toSeq
     map_new += "fav" -> new_recipes_fav.toSeq
@@ -484,6 +462,36 @@ object Extractor extends Logging{
         else
           None
     }
+  }
+
+  def extractRecipeFromReviews(author: User, reviews: Seq[Review], newIDs: Set[Long], connectionProperties : Properties, csvDelimiter : String) : (Seq[Recipe], Seq[Long]) = {
+
+    val delay = connectionProperties.getProperty("delay-recipe").toLong
+    val nrecipes_delay = connectionProperties.getProperty("nrecipes").toLong
+    val delay_nrecipes = connectionProperties.getProperty("delay-nrecipes").toLong
+    var nrecipes = 0
+    var new_recipes: Seq[Recipe] = Seq()
+    var repeated_recipes: Seq[Long] = Seq()
+    reviews.foreach(review => {
+      val id = review.recipe.id
+      if(!newIDs.contains(id)) {
+        val potRecipe = extractRecipe(author.id, review.recipe.weburl, review.recipe.apiurl, connectionProperties, csvDelimiter)
+        if (potRecipe.isDefined) {
+          nrecipes += 1
+          if (nrecipes % nrecipes_delay == 0) {
+            logger.info(s"Extracted ${nrecipes} recipes. Sleeping...")
+            Thread.sleep(delay_nrecipes)
+          }
+          else
+            Thread.sleep(delay)
+          new_recipes :+= potRecipe.get
+        }
+      }
+      else
+        repeated_recipes :+= id
+    })
+
+    (new_recipes, repeated_recipes)
   }
 
   def extractCategories(url : String, connectionProperties : Properties) : Option[JSONArray] = {

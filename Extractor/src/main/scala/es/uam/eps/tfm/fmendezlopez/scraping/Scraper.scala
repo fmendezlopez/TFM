@@ -28,8 +28,6 @@ object Scraper extends Logging{
   private var nutritionMapping : Map[String, String] = _
   private var footnotesKeys : Map[String, String] = _
 
-  private var recipe_id = -2
-
   def setProperties(properties : Configuration) : Unit = {
     this.properties = properties
     baseURL = properties.getString("allrecipes.url.base")
@@ -49,32 +47,33 @@ object Scraper extends Logging{
     footnotesStr.split('|').foreach(str => footnotesKeys += (str -> ""))
   }
 
-  def scrapeRecipe(author_id : Long, json : String, html : String, csvSeparator : String): Recipe = {
+  def scrapeRecipe(author_id: Long, json: String, html: String, csvSeparator: String, baseCategory: Long): Recipe = {
     val mainJSON = new JSONObject(json)
     val result = new Recipe()
     var id : Long = -1
     val prior_id = mainJSON.getLong("recipeID")
-    result.title_=(mainJSON.getString("title").replace(csvSeparator, " "))
+    result.title_=(prepareAllrecipesString(mainJSON.getString("title")))
     val links = mainJSON.getJSONObject("links")
     var weburl =
       if(links.has("recipeUrl") && !links.isNull("recipeUrl")) links.getJSONObject("recipeUrl").getString("href")
       else ""
     val apiurl =
-      if(links.has("self") && !links.isNull("self")) links.getJSONObject("self").getString("href").replace(csvSeparator, " ")
+      if(links.has("self") && !links.isNull("self")) links.getJSONObject("self").getString("href")
       else ""
-    result.url_=(weburl)
+    result.weburl_=(weburl)
     id = Utils.deduceRecipeID(prior_id, weburl, apiurl)
     result.id_=(id)
     val json_author = mainJSON.getJSONObject("submitter")
     val author = new Author
     //author.id_=(json_author.getLong("userID"))
     author.id_=(author_id)
-    author.url_=(baseURL + json_author.getString("profileUrl").replace(csvSeparator, " "))
+    author.url_=(baseURL + json_author.getString("profileUrl"))
     result.author_=(author)
     result.rating_=(mainJSON.getDouble("ratingAverage"))
     result.ratingCount_=(mainJSON.getInt("ratingCount"))
     result.reviewCount_=(mainJSON.getInt("reviewCount"))
-    result.description_=(mainJSON.getString("description").replace(csvSeparator, " "))
+
+    result.description_=(prepareAllrecipesString(mainJSON.getString("description")))
     result.servings_=(mainJSON.getInt("servings"))
 
     if(mainJSON.isNull("nutrition"))
@@ -99,11 +98,11 @@ object Scraper extends Logging{
       result.notes_=(scrapeNotes(notes, csvSeparator))
     }
     else{
-      result.notes_=(mutable.Map() ++= footnotesKeys)
+      result.notes_=(Seq("","","",""))
     }
     if(!html.isEmpty) {
       result.madeit_=(scrapeMadeIt(html))
-      val category = scrapeCategory(html)
+      val category = scrapeCategory(html, baseCategory)
       result.category_=(category)
     }
     else {
@@ -127,7 +126,7 @@ object Scraper extends Logging{
       val recipe = new Recipe()
       recipe.id_=(json.getLong("recipeID"))
       recipe.title_=(json.getString("title").replace(csvSeparator, " "))
-      recipe.url_=(json.getJSONObject("links").getJSONObject("recipeUrl").getString("href").replace(csvSeparator, " "))
+      recipe.weburl_=(json.getJSONObject("links").getJSONObject("recipeUrl").getString("href").replace(csvSeparator, " "))
       val json_author = json.getJSONObject("submitter")
       val author = new Author
       author.id_=(json_author.getLong("userID"))
@@ -136,7 +135,7 @@ object Scraper extends Logging{
       recipe.rating_=(json.getDouble("ratingAverage"))
       recipe.ratingCount_=(json.getInt("ratingCount"))
       recipe.reviewCount_=(json.getInt("reviewCount"))
-      recipe.description_=(json.getString("description").replace(csvSeparator, " "))
+      recipe.description_=(prepareAllrecipesString(json.getString("description")))
       recipe.servings_=(json.getInt("servings"))
 
       if(json.isNull("nutrition"))
@@ -152,8 +151,13 @@ object Scraper extends Logging{
       recipe.totalTime_=(json.optDouble("readyInMinutes", 0).toInt)
       val steps = json.getJSONArray("directions")
       recipe.steps_=(scrapeDirections(steps, csvSeparator))
-      val notes = json.getJSONArray("footnotes")
-      recipe.notes_=(scrapeNotes(notes, csvSeparator))
+      if(!mainJSON.isNull("footnotes")){
+        val notes = mainJSON.getJSONArray("footnotes")
+        recipe.notes_=(scrapeNotes(notes, csvSeparator))
+      }
+      else{
+        recipe.notes_=(Seq("","","",""))
+      }
       result :+= recipe
       i += 1
     }
@@ -276,7 +280,7 @@ object Scraper extends Logging{
       val ingredient = json.optJSONObject(i)
       if(ingredient != null) {
         val id = ingredient.getInt("ingredientID")
-        val displayValue = ingredient.getString("displayValue").replace(csvSeparator, " ")
+        val displayValue = prepareAllrecipesString(ingredient.getString("displayValue"))
         val amount = ingredient.getDouble("grams")
         val ingr = new Ingredient
         ingr.id_=(id)
@@ -296,27 +300,32 @@ object Scraper extends Logging{
       val step = json.getJSONObject(i)
       val number = step.getInt("ordinal")
       val text = step.getString("displayValue")
-      result :+= (number, text.replace(csvSeparator, " "))
+      result :+= (number, prepareAllrecipesString(text))
       i += 1
     }
     result
   }
 
-  def scrapeNotes(json : JSONArray, csvSeparator : String) : mutable.Map[String, String] = {
-    val result : mutable.Map[String, String] = mutable.Map() ++= footnotesKeys
+  def scrapeNotes(json : JSONArray, csvSeparator : String) : Seq[String] = {
+    val map : mutable.Map[String, String] = mutable.Map() ++= footnotesKeys
     var i = 0
     while(i < json.length()){
       val name_obj = json.getJSONObject(i)
-      val name = name_obj.getString("text")
+      val name = name_obj.getString("text").toUpperCase
       i += 1
-      if(result.contains(name) && i < json.length()){
+      if(map.contains(name) && i < json.length()){
         val note_obj = json.getJSONObject(i)
         val note = note_obj.getString("text")
-        result(name) = note.replace(csvSeparator, " ")
+        map(name) = prepareAllrecipesString(note)
         i += 1
       }
     }
-    result
+    Seq(
+      map("COOK'S NOTE:"),
+      map("EDITOR'S NOTE:"),
+      map("TIP"),
+      map("CHEF'S NOTE:")
+    )
   }
 
   def scrapeMadeIt(html : String) : Int = {
@@ -324,7 +333,7 @@ object Scraper extends Logging{
     val doc = browser.parseString(html)
     val body = (doc >> elementList("body")).head
     val sections = body >> elementList("section")
-    var sections_filtered = sections.filter(element => if(element.hasAttr("class")) element.attr("class").contains("recipe-summary") else false)
+    val sections_filtered = sections.filter(element => if(element.hasAttr("class")) element.attr("class").contains("recipe-summary") else false)
     if(sections_filtered.length != 1){
       logger.error("Could not scrape recipe summary (madeit scraping)")
       return 0
@@ -348,49 +357,31 @@ object Scraper extends Logging{
     recipe_madeit.toInt
   }
 
-  def scrapeCategory(html : String) : RecipeCategory = {
+  def scrapeCategory(html: String, baseCategory: Long): RecipeCategory = {
+
     val category = new RecipeCategory
     val browser = JsoupBrowser()
     val doc = browser.parseString(html)
-    val body = (doc >> elementList("body")).head
-    val sections = body >> elementList("section")
-    val sections_filtered = sections.filter(element => if(element.hasAttr("class")) element.attr("class").contains("ar_recipe_index full-page") else false)
-    if(sections_filtered.length != 1){
-      logger.error("Could not scrape recipe summary (category scraping)")
-      return category
+    val uls = doc.body >> elementList("ul.breadcrumbs")
+    if(uls.isEmpty){
+      category.id_=(baseCategory)
+      category.url_=(baseURL)
     }
-
-    val uls : List[Element] = (sections_filtered.head >> elementList("ul"))
-      .filter(element => if(element.hasAttr("class")) element.attr("class").contains("breadcrumbs") else false)
-    if(uls.length != 1){
-      logger.error("Could not scrape ul breadcrumbs (category scraping)")
-      return category
+    else{
+      val ul = uls.head
+      var url = baseURL
+      var id = baseCategory
+      (ul >> elementList("li")).foreach(li => {
+        val as = li >> elementList("a")
+        if(!as.isEmpty){
+          val a = as.head
+          val href = a.attr("href")
+          id = Utils.detectIDinURL(href, "/").getOrElse(baseCategory)
+        }
+      })
+      category.id_=(id)
+      category.url_=(s"${baseURL}/${id}")
     }
-
-    val items : List[Element] = (uls.head >> elementList("li"))
-      .filter(element => element.hasAttr("itemscope"))
-    if(items.length < 1){
-      logger.error("Could not scrape ul items (category scraping)")
-      return category
-    }
-
-    val links : List[Element] = (items.last >> elementList("a"))
-      .filter(element => if(element.hasAttr("data-internal-referrer-link")) element.attr("data-internal-referrer-link").contains("breadcrumb") else false)
-    if(uls.length != 1){
-      logger.error("Could not scrape a link for ul item breadcrumb (category scraping)")
-      return category
-    }
-    val link = links.head
-    val href = link.attr("href")
-    val url = s"${properties.getString("allrecipes.url.base")}${href}"
-    val tokenizer = new StringTokenizer(href, "/")
-    tokenizer.nextToken
-    var id : Long = -1
-    if(tokenizer.hasMoreTokens) {
-      id = tokenizer.nextToken.toLong
-    }
-    category.id_=(id)
-    category.url_=(url)
     category
   }
 
@@ -403,7 +394,7 @@ object Scraper extends Logging{
       val review = arr.getJSONObject(i)
       val id = review.getLong("reviewID")
       val rating = review.getInt("rating")
-      val text = review.getString("text")
+      val text = prepareAllrecipesString(review.getString("text"))
       val dateTokenizer = new StringTokenizer(review.getString("dateLastModified"))
       val date = dateTokenizer.nextToken("T")
       val helpfulCount = review.getInt("helpfulCount")
@@ -418,19 +409,19 @@ object Scraper extends Logging{
       recipe.id_=(json_recipe.getLong("recipeID"))
       var rec_url = ""
       val links = json_recipe.getJSONObject("links")
-      if(!links.isNull("recipeUrl")){
-        val url = links.getJSONObject("recipeUrl")
-        if(!url.isNull("href")){
-          rec_url = url.getString("href")
-        }
-      }
-
-      recipe.url_=(rec_url)
+      val weburl =
+        if(links.has("recipeUrl") && !links.isNull("recipeUrl")) links.getJSONObject("recipeUrl").getString("href")
+        else ""
+      val apiurl =
+        if(links.has("parent") && !links.isNull("parent")) links.getJSONObject("parent").getString("href").replace(csvSeparator, " ")
+        else ""
+      recipe.apiurl_=(apiurl)
+      recipe.weburl_=(weburl)
 
       val rev = new Review
       rev.id_=(id)
       rev.rating_=(rating)
-      rev.text_=(text.replace(csvSeparator, " "))
+      rev.text_=(text)
       rev.date_=(date)
       rev.helpfulCount_=(helpfulCount)
       rev.author_=(author)
@@ -445,7 +436,7 @@ object Scraper extends Logging{
     val mainJSON : JSONObject = if(input.isLeft) new JSONObject(input.left.get) else input.right.get
     val user = new User
     user.id_=(mainJSON.getLong("userID"))
-    user.name_=(mainJSON.getString("name").replace(csvDelimiter, " "))
+    user.name_=(prepareAllrecipesString(mainJSON.getString("name")))
     user.followerCount_=(mainJSON.getInt("followersCount"))
     user.followingCount_=(mainJSON.getInt("followingCount"))
     user.madeitCount=(mainJSON.getInt("madeRecipesCount"))
@@ -453,10 +444,10 @@ object Scraper extends Logging{
     user.ratingCount_=(mainJSON.getInt("ratingsCount"))
     user.recipeCount_=(mainJSON.getInt("personalRecipeSharedCount"))
     user.reviewCount_=(mainJSON.getInt("reviewsCount"))
-    user.city_=(mainJSON.optString("city", "").replace(csvDelimiter, " "))
-    user.region_=(mainJSON.optString("region", "").replace(csvDelimiter, " "))
-    user.country_=(mainJSON.optString("country", "").replace(csvDelimiter, " "))
-    user.handle_=(mainJSON.getString("handle").replace(csvDelimiter, " "))
+    user.city_=(prepareAllrecipesString(mainJSON.optString("city", "")))
+    user.region_=(prepareAllrecipesString(mainJSON.optString("region", "")))
+    user.country_=(prepareAllrecipesString(mainJSON.optString("country", "")))
+    user.handle_=(mainJSON.getString("handle").replace(csvDelimiter, " ").replace("\"", " "))
     user.profileUrl_=(s"${properties.getString("allrecipes.url.base")}${mainJSON.getString("profileUrl")}")
     user
   }
@@ -502,7 +493,7 @@ object Scraper extends Logging{
       return None
     }
     val recipe_url = sanitizeHTMLString(urls.head.attr("href"))
-    result.url_=(s"${baseURL}${recipe_url}")
+    result.weburl_=(s"${baseURL}${recipe_url}")
 
     //Recipe summary
     val body = (doc >> elementList("body")).head
@@ -1236,7 +1227,7 @@ object Scraper extends Logging{
     val doc = browser.parseString(html)
     val name = (doc >> element("h1")).innerHtml.replace(delimiter, ' ')
     val spans_time = doc >> elementList("span.frr_totaltime")
-    var total_time = 0
+    val total_time = 0
     var cook_time = 0
     if(!spans_time.isEmpty){
       parseTime((spans_time.head >> element("time")).attr("content"))
@@ -1319,5 +1310,10 @@ object Scraper extends Logging{
     result.steps_=(steps)
     result.stepsnumber_=(steps.length)
     Some(result)
+  }
+
+  def prepareAllrecipesString(str: String) : String = {
+    str
+      .replaceAll("(\n|\r|\")", " ")
   }
 }
