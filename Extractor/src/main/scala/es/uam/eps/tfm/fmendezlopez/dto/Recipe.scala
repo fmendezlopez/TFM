@@ -29,6 +29,7 @@ class Recipe {
   private var _notes : Seq[String] = Seq()
   private var _reviews : Seq[Review] = Seq()
   private var _category : RecipeCategory = null
+  private var _similarRecipes: Seq[Long] = Seq()
 
   def id = _id
   def title = _title
@@ -50,6 +51,7 @@ class Recipe {
   def notes = _notes
   def reviews = _reviews
   def category = _category
+  def similarRecipes = _similarRecipes
 
   def id_= (value : Long) : Unit = _id = value
   def title_= (value : String) : Unit = _title = value
@@ -71,9 +73,10 @@ class Recipe {
   def notes_= (value : Seq[String]) : Unit = _notes = value
   def reviews_= (value : Seq[Review]) : Unit = _reviews = value
   def category_= (value : RecipeCategory) : Unit = _category = value
+  def similarRecipes_=(value: Seq[Long]) : Unit = _similarRecipes = value
 
   def toSeq() : Seq[Any] = {
-    var result : Seq[Any] = Seq(_id, category.id, _title, _weburl, _rating, _ratingCount, _reviewCount, _madeit, _description, _servings, _prepTime, _cookTime, _totalTime)
+    var result : Seq[Any] = Seq(_id, category.id, _title, _rating, _ratingCount, _reviewCount, _madeit, _description, _servings, _prepTime, _cookTime, _totalTime, _weburl, _apiurl)
     result ++ notes
   }
 

@@ -8,6 +8,7 @@ import java.net.SocketTimeoutException
 import java.util.Properties
 
 import com.github.tototoshi.csv.{CSVWriter, DefaultCSVFormat}
+import es.uam.eps.tfm.fmendezlopez.scraping.Extractor
 import es.uam.eps.tfm.fmendezlopez.utils._
 import net.ruippeixotog.scalascraper.browser.JsoupBrowser
 import net.ruippeixotog.scalascraper.dsl.DSL.Extract._
@@ -29,7 +30,7 @@ import org.json4s.native.JsonMethods._
 
 import scala.collection.mutable
 
-object CategoriesExtraction extends Logging{
+object CategoriesExtractor extends Logging{
 
   private var properties : Configuration = _
   private var baseURL : String = _
@@ -61,23 +62,21 @@ object CategoriesExtraction extends Logging{
       connectionProperties.put("delay-auth", properties.getProperty("stage0.scraping.delay.auth"))
       connectionProperties.put("max-attempts", properties.getProperty("stage0.scraping.max-attempts"))
       connectionProperties.put("delay-detection", properties.getProperty("stage0.scraping.delay.detection"))
-      connectionProperties.put("cookie-token", properties.getProperty("general.scraping.cookiename.artoken"))
       connectionProperties.put("referrer", allCategoriesURL)
       connectionProperties.put("max-body-size", properties.getProperty("stage0.scraping.maxBodySize"))
       connectionProperties.put("host", properties.getProperty("allrecipes.host"))
       connectionProperties.put("delay-category", properties.getProperty("stage0.scraping.delay.category"))
       connectionProperties.put("delay-categories", properties.getProperty("stage0.scraping.delay.categories"))
       connectionProperties.put("delay-n", properties.getProperty("stage0.scraping.delay.n"))
+      connectionProperties.put("use-cookies", properties.getString("stage0.scraping.use-cookies"))
+      connectionProperties.put("follow-redirects", properties.getProperty("stage0.scraping.followRedirects"))
 
       HttpManager.setProperties(properties)
       HttpManager.setConnectionProperties(connectionProperties)
-      val res = HttpManager.requestAuthToken()
-      if(res.isEmpty){
+      if(!HttpManager.resetToken){
         logger.fatal("Cannot retrieve auth token\nFinishing...")
         System.exit(1)
       }
-      connectionProperties.put("auth-token", res.get)
-      HttpManager.setConnectionProperties(connectionProperties)
 
       csvCategories = CSVManager.openCSVWriter(outputDir, csvCategoriesName, delimiter)
       csvCategoriesRel = CSVManager.openCSVWriter(outputDir, csvCategoriesRelName, delimiter)
@@ -85,7 +84,7 @@ object CategoriesExtraction extends Logging{
       csvCategoriesRel.writeRow(Seq("ID_PARENT", "ID_CHILD"))
 
       val start = System.currentTimeMillis()
-      val mainCategories = Extractor.extractCategories(allCategoriesURL, connectionProperties).getOrElse(new JSONArray)
+      val mainCategories = Extractor.extractCategories(allCategoriesURL).getOrElse(new JSONArray)
       val mainJSON = processGroups(mainCategories, -1, "", 0, 0, allCategoriesURL)
       val end = System.currentTimeMillis()
       logger.info(s"Elapsed time: ${end - start}ms")
@@ -117,11 +116,11 @@ object CategoriesExtraction extends Logging{
         }
         else{
           val newHierarchy = s"${hierarchy}${name}>"
-          logger.info(s"Hierarchy: ${newHierarchy}")
-          logger.info(s"Depth: ${currDepth}")
-          logger.info(s"Processing group: ${name}")
+          logger.debug(s"Hierarchy: ${newHierarchy}")
+          logger.debug(s"Depth: ${currDepth}")
+          logger.debug(s"Processing group: ${name}")
           processCategories(categories, newHierarchy, currDepth, idParent, cat_url)
-          logger.info(s"Processed group: ${name}")
+          logger.debug(s"Processed group: ${name}")
         }
       }
     }
@@ -146,13 +145,13 @@ object CategoriesExtraction extends Logging{
         else{
           csvCategories.writeRow(Seq(id, title, url, count))
           csvCategoriesRel.writeRow(Seq(idParent, id))
-          logger.info(s"Processing category: ${name}")
+          logger.debug(s"Processing category: ${name}")
           val curl = s"${baseURL}${path}"
           connectionProperties.replace("referrer", cat_url)
-          val subCategories = Extractor.extractCategories(curl, connectionProperties).getOrElse(new JSONArray)
+          val subCategories = Extractor.extractCategories(curl).getOrElse(new JSONArray)
           ncategories += 1
           if(ncategories % connectionProperties.getProperty("delay-n").toInt == 0){
-            logger.info(s"Requested ${ncategories} categories. Sleeping...")
+            logger.info(s"Got ${ncategories} categories. Sleeping...")
             Thread.sleep(connectionProperties.getProperty("delay-categories").toLong)
           }
           else{
@@ -160,7 +159,7 @@ object CategoriesExtraction extends Logging{
           }
           categoriesVisited += id
           processGroups(subCategories, id, newHierarchy, currDepth + 1, id, curl)
-          logger.info(s"Processed category: ${id}_${title}")
+          logger.debug(s"Processed category: ${id}_${title}")
         }
         /*
         category.put("ChildHubs", subArray)

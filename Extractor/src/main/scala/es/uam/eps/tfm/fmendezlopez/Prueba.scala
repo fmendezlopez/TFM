@@ -19,16 +19,18 @@ import net.ruippeixotog.scalascraper.model.{Element, TextNode}
 import net.ruippeixotog.scalascraper.dsl.DSL._
 import net.ruippeixotog.scalascraper.scraper.ContentExtractors._
 
+import scala.collection.mutable
+
 /**
   * Created by Francisco on 13/04/2017.
   */
 object Prueba {
 
   def main(args: Array[String]): Unit = {
-    val str = "fdfs\"cscsd\r\ndasdas"
-    println(str)
-    println("\n\n")
-    println(str.replaceAll("(\n|\r|\")", ""))
+    val str: Seq[Int] = Seq(1, 2, 3)
+    val a: mutable.Seq[Int] = mutable.Seq.empty[Int] ++ str
+    a.update(1, 0)
+    a.foreach(println)
   }
 
   def detectIDinURL(url : String, sep: String) : Option[Long] = {

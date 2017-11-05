@@ -1,14 +1,11 @@
-package es.uam.eps.tfm.fmendezlopez.extraction
+package es.uam.eps.tfm.fmendezlopez.scraping
 
 import java.sql.SQLException
-import java.util.Properties
 
 import es.uam.eps.tfm.fmendezlopez.dao.DatabaseDAO
-import es.uam.eps.tfm.fmendezlopez.dto.{Recipe, Review, User, UserRecipe}
+import es.uam.eps.tfm.fmendezlopez.dto.{Recipe, Review, User}
 import es.uam.eps.tfm.fmendezlopez.exception.{APIAuthorizationException, APILoginException, ScrapingDetectionException}
-import es.uam.eps.tfm.fmendezlopez.scraping.Scraper
 import es.uam.eps.tfm.fmendezlopez.utils.{HttpManager, Logging, Utils}
-import org.apache.commons.configuration2.Configuration
 import org.json.{JSONArray, JSONObject}
 
 import scala.collection.mutable
@@ -17,6 +14,7 @@ import scala.collection.mutable
   * Created by franm on 20/06/2017.
   */
 object Extractor extends Logging{
+
 
   /*
   def extractRecipe(id : String, properties : Configuration, connectionProperties : Properties, csvDelimiter : String, complete : Boolean = true): Option[Recipe] ={
@@ -53,21 +51,20 @@ object Extractor extends Logging{
   }
   */
 
-  def extractRecipe(author_id: Long, webURL: String, apiURL: String, connectionProperties: Properties, csvDelimiter: String): Option[Recipe] ={
+  def extractRecipe(author_id: Long, webURL: String, apiURL: String, csvDelimiter: String): Option[Recipe] ={
 
     try{
       logger.debug(s"Extracting recipe with webURL ${webURL} and apiURL ${apiURL}")
-      val html_str = if(webURL.isEmpty) None else HttpManager.requestRecipeWebURL(webURL, connectionProperties)
+      val html_str = if(webURL.isEmpty) None else HttpManager.requestRecipeWebURL(webURL)
       if(html_str.isEmpty){
         logger.error(s"Could not retrieve recipe with url ${webURL} from WEB")
-        return None
       }
-      val json_str = HttpManager.requestRecipeAPIURL(apiURL, connectionProperties)
+      val json_str = HttpManager.requestRecipeAPIURL(apiURL)
       if(json_str.isEmpty){
         logger.error(s"Could not retrieve recipe with url ${apiURL} from API")
         return None
       }
-      Some(Scraper.scrapeRecipe(author_id, json_str.get, html_str.get, csvDelimiter, connectionProperties.getProperty("default-category").toLong))
+      Some(Scraper.scrapeRecipe(json_str.get, html_str, csvDelimiter, HttpManager.getProperty("default-category").toLong, HttpManager.getProperty("similar-threshold").toInt))
     } catch {
       case sde : ScrapingDetectionException =>
         logger.error(sde)
@@ -79,9 +76,8 @@ object Extractor extends Logging{
 
       case aae : APIAuthorizationException =>
         logger.error(aae)
-        val newProps = HttpManager.resetToken(connectionProperties)
-        if(newProps.isDefined) {
-          val rt = extractRecipe(author_id, webURL, apiURL, newProps.get, csvDelimiter)
+        if(HttpManager.resetToken) {
+          val rt = extractRecipe(author_id, webURL, apiURL, csvDelimiter)
           if(rt.isEmpty)
             None
           else
@@ -92,59 +88,13 @@ object Extractor extends Logging{
     }
   }
 
-  def extractRecipe(author_id: Long, recipe_id: Long, apiURL: String, connectionProperties: Properties, csvDelimiter: String): Option[Recipe] ={
-
-    var webURL = ""
-    try{
-      val json_str = HttpManager.requestRecipeAPIURL(apiURL, connectionProperties)
-      if(json_str.isEmpty){
-        logger.error(s"Could not retrieve recipe with url ${apiURL} from API")
-        return None
-      }
-      val mainJSON = new JSONObject(json_str)
-      val links = mainJSON.getJSONObject("links")
-      webURL =
-        if(links.has("recipeUrl") && !links.isNull("recipeUrl")) links.getJSONObject("recipeUrl").getString("href")
-        else Utils.compoundRecipeURL(recipe_id.toString, connectionProperties.getProperty("base-host"))
-
-      logger.debug(s"Extracting recipe with webURL ${webURL} and apiURL ${apiURL}")
-      val html_str = if(webURL.isEmpty) Some("") else HttpManager.requestRecipeWebURL(webURL, connectionProperties)
-      if(html_str.isEmpty){
-        logger.error(s"Could not retrieve recipe with url ${webURL} from WEB")
-        return None
-      }
-      Some(Scraper.scrapeRecipe(author_id, json_str.get, html_str.get, csvDelimiter, connectionProperties.getProperty("default-category").toLong))
-    } catch {
-      case sde : ScrapingDetectionException =>
-        logger.error(sde)
-        return None
-
-      case ale : APILoginException =>
-        logger.error(ale)
-        return None
-
-      case aae : APIAuthorizationException =>
-        logger.error(aae)
-        val newProps = HttpManager.resetToken(connectionProperties)
-        if(newProps.isDefined) {
-          val rt = extractRecipe(author_id, webURL, apiURL, newProps.get, csvDelimiter)
-          if(rt.isEmpty)
-            None
-          else
-            rt
-        }
-        else
-          None
-    }
-  }
-
-  def extractUser(id : Long, connectionProperties : Properties, csvDelimiter : String, complete : Boolean = true) : Option[User] = {
+  def extractUser(id : Long, csvDelimiter : String, complete : Boolean = true) : Option[User] = {
     try{
       var ret : Option[String] = None
       if(complete){
-        HttpManager.requestUserWeb(id, connectionProperties)
+        HttpManager.requestUserWeb(id)
       }
-      ret = HttpManager.requestUserAPI(id, connectionProperties)
+      ret = HttpManager.requestUserAPI(id)
       if(ret.isEmpty){
         logger.error(s"Could not extract user with id ${id} from API")
         return None
@@ -156,9 +106,8 @@ object Extractor extends Logging{
         return None
       case aae : APIAuthorizationException =>
         logger.fatal(aae)
-        val newProps = HttpManager.resetToken(connectionProperties)
-        if(newProps.isDefined) {
-          val rt = extractUser(id, newProps.get, csvDelimiter, complete)
+        if(HttpManager.resetToken) {
+          val rt = extractUser(id, csvDelimiter, complete)
           if(rt.isEmpty)
             None
           else
@@ -169,13 +118,13 @@ object Extractor extends Logging{
     }
   }
 
-  def extractFollowing(id : Long, connectionProperties : Properties, csvDelimiter : String, nusers : Int) : Option[Seq[User]] = {
-    val pagesize = connectionProperties.getProperty("max-pagesize").toInt
+  def extractFollowing(id : Long, csvDelimiter : String, nusers : Int) : Option[Seq[User]] = {
+    val pagesize = HttpManager.getProperty("max-pagesize").toInt
     val npages = nusers / pagesize
     var result : Seq[User] = Seq()
     try{
       (1 to npages).foreach(i => {
-        val ret = HttpManager.requestFollowingAPI(id, connectionProperties, pagesize, i)
+        val ret = HttpManager.requestFollowingAPI(id, pagesize = pagesize, pageNumber = i)
         if(ret.isEmpty){
           logger.error(s"Could not retrieve following for id ${id}")
           return None
@@ -190,9 +139,8 @@ object Extractor extends Logging{
         return None
       case aae : APIAuthorizationException =>
         logger.fatal(aae)
-        val newProps = HttpManager.resetToken(connectionProperties)
-        if(newProps.isDefined) {
-          val rt = extractFollowing(id, newProps.get, csvDelimiter, nusers)
+        if(HttpManager.resetToken) {
+          val rt = extractFollowing(id, csvDelimiter, nusers)
           if(rt.isEmpty)
             None
           else
@@ -202,13 +150,13 @@ object Extractor extends Logging{
           None
     }
   }
-  def extractFollowers(id : Long, connectionProperties : Properties, csvDelimiter : String, nusers : Int) : Option[Seq[User]] = {
-    val pagesize = connectionProperties.getProperty("max-pagesize").toInt
-    val npages = nusers / pagesize
+  def extractFollowers(id : Long, csvDelimiter : String, nusers : Int) : Option[Seq[User]] = {
+    val pageSize = HttpManager.getProperty("max-pagesize").toInt
+    val npages = nusers / pageSize
     var result : Seq[User] = Seq()
     try{
       (1 to npages).foreach(i => {
-        val ret = HttpManager.requestFollowersAPI(id, connectionProperties, pagesize, i)
+        val ret = HttpManager.requestFollowersAPI(id, pagesize = pageSize, pageNumber = i)
         if(ret.isEmpty){
           logger.error(s"Could not retrieve following for id ${id}")
           return None
@@ -223,9 +171,8 @@ object Extractor extends Logging{
         return None
       case aae : APIAuthorizationException =>
         logger.fatal(aae)
-        val newProps = HttpManager.resetToken(connectionProperties)
-        if(newProps.isDefined) {
-          val rt = extractFollowers(id, newProps.get, csvDelimiter, nusers)
+        if(HttpManager.resetToken) {
+          val rt = extractFollowers(id, csvDelimiter, nusers)
           if(rt.isEmpty)
             None
           else
@@ -236,7 +183,8 @@ object Extractor extends Logging{
     }
   }
 
-  def extractUserRecipes(author : User, connectionProperties : Properties, csvDelimiter : String, maxrecipes : Int) : Option[(Map[String, Seq[Recipe]], Map[String, Seq[Long]])] = {
+  @throws(classOf[ScrapingDetectionException])
+  def extractUserRecipes(author : User, csvDelimiter : String, maxrecipes : Int) : Option[(Map[String, Seq[Recipe]], Map[String, Seq[Long]])] = {
 
     val daoDB = DatabaseDAO.getInstance()
 
@@ -257,6 +205,7 @@ object Extractor extends Logging{
           if(links.has("parent") && !links.isNull("parent")) links.getJSONObject("parent").getString("href")
           else ""
         val id = Utils.deduceRecipeID(prior_id, weburl, apiurl)
+        if(weburl.isEmpty) weburl = Utils.compoundRecipeURL(id.toString, HttpManager.getProperty("base-recipe-web"))
         result :+= (id, weburl, apiurl)
         i += 1
       }
@@ -280,41 +229,59 @@ object Extractor extends Logging{
           if(links.has("parent") && !links.isNull("parent")) links.getJSONObject("parent").getString("href")
           else ""
         val id = Utils.deduceRecipeID(prior_id, weburl, apiurl)
+        if(weburl.isEmpty) weburl = Utils.compoundRecipeURL(id.toString, HttpManager.getProperty("base-recipe-web"))
         result :+= (id, weburl, apiurl)
         i += 1
       }
       result
     }
 
-    def getRecipes(author_id : Long, list : String, nrecipes : Int, scraped : Set[Long], maxrecipes : Int) : (Seq[Recipe], Set[Long]) = {
-      logger.debug(s"Getting recipes for list ${list}")
+    @throws(classOf[ScrapingDetectionException])
+    def getRecipes(author_id : Long, lst : String, nrecipes : Int, scraped : Set[Long], maxrecipes : Int) : (Seq[Recipe], Set[Long]) = {
+      logger.debug(s"Getting recipes for list ${lst}")
       def ceil10(n : Int) : Int = {
         (10 * scala.math.ceil(n.toDouble / 10.toDouble)).toInt
       }
 
       var new_recipes : Seq[Recipe] = Seq()
       var repeated_recipes : Set[Long] = Set()
-      val delay = connectionProperties.getProperty("delay-recipe").toLong
-      val nrecipes_delay = connectionProperties.getProperty("nrecipes").toLong
-      val delay_nrecipes = connectionProperties.getProperty("delay-nrecipes").toLong
+      val delay = HttpManager.getProperty("delay-recipe").toLong
+      val nrecipes_delay = HttpManager.getProperty("nrecipes").toLong
+      val delay_nrecipes = HttpManager.getProperty("delay-nrecipes").toLong
       var retry = false
       var page = 1
-      val pagesize = ceil10(nrecipes)
-      val maxpages = math.ceil(maxrecipes.toDouble / pagesize).toInt
+      val pageSize = ceil10(nrecipes)
+      val maxpages = math.ceil(maxrecipes.toDouble / pageSize).toInt
       var recipes = 0
       do{
-        val ret = HttpManager.requestUserRecipes(author_id, connectionProperties, pagesize, page, list)
+        var ret: Option[String] = None
+        try{
+          ret = HttpManager.requestUserRecipes(author_id, pagesize = pageSize, pageNumber = page, list = lst)
+        } catch {
+          case ale : APILoginException =>
+            logger.error(ale)
+            retry = false
+
+          case aae : APIAuthorizationException =>
+            logger.error(aae)
+            if(HttpManager.resetToken) {
+              ret = HttpManager.requestUserRecipes(author_id, pagesize = pageSize, pageNumber = page, list = lst)
+              if(ret.isEmpty)
+                throw new ScrapingDetectionException(aae.getMessage)
+            }
+        }
         if(ret.isEmpty){
-          logger.error(s"Could not retrieve user recipe list ${list} for id ${author_id}")
+          logger.error(s"Could not retrieve user recipe list ${lst} for id ${author_id}")
+          retry = false
         }
         else{
-          val lst = if(list == "fav") scrapeFavList(ret.get) else extRecipes(ret.get)
-          if(lst.isEmpty){
-            logger.warn(s"List ${list} seems to be empty for user ${author_id}")
+          val lstR = if(lst == "fav") scrapeFavList(ret.get) else extRecipes(ret.get)
+          if(lstR.isEmpty){
+            logger.warn(s"List ${lst} seems to be empty for user ${author_id}")
             retry = false
           }
           else{
-            val it = lst.iterator
+            val it = lstR.iterator
             do{
               val (id, web, api) = it.next()
               logger.debug(s"Processing recipe with id ${id}")
@@ -334,7 +301,25 @@ object Extractor extends Logging{
                 recipes += 1
               }
               else {
-                val potRecipe = extractRecipe(author.id, web, api, connectionProperties, csvDelimiter)
+                var potRecipe: Option[Recipe] = None
+                try{
+                  potRecipe = extractRecipe(author.id, web, api, csvDelimiter)
+                } catch {
+                  case ale : APILoginException =>
+                    logger.error(ale)
+                    retry = false
+
+                  case aae : APIAuthorizationException =>
+                    logger.error(aae)
+                    val newProps = HttpManager.resetToken
+                    if(HttpManager.resetToken) {
+                      potRecipe = extractRecipe(author.id, web, api, csvDelimiter)
+                      if(potRecipe.isEmpty)
+                        throw new ScrapingDetectionException(aae.getMessage)
+                    }
+                    else
+                      retry = false
+                }
                 if (recipes != 0 && recipes % nrecipes_delay == 0) {
                   logger.info(s"Extracted ${recipes} recipes. Sleeping...")
                   Thread.sleep(delay_nrecipes)
@@ -360,7 +345,7 @@ object Extractor extends Logging{
     var map_new : Map[String, Seq[Recipe]] = Map()
     var map_repeated : Map[String, Seq[Long]] = Map()
     val map = getRecipesExtraction(author, maxrecipes)
-    val delay = connectionProperties.getProperty("delay-recipe-list").toLong
+    val delay = HttpManager.getProperty("delay-recipe-list").toLong
 
     var new_recipes_recipes : Set[Recipe] = Set()
     var repeated_recipes_recipes : Set[Long] = Set()
@@ -430,13 +415,13 @@ object Extractor extends Logging{
     Some((map_new, map_repeated))
   }
 
-  def extractUserReviews(author_id : Long, connectionProperties : Properties, csvDelimiter : String, nreviews : Int) : Option[Seq[Review]] = {
-    val pagesize = connectionProperties.getProperty("max-pagesize").toInt
-    val npages = nreviews / pagesize
+  def extractUserReviews(author_id : Long, csvDelimiter : String, nReviews : Int) : Option[Seq[Review]] = {
+    val pageSize = HttpManager.getProperty("max-pagesize").toInt
+    val npages = nReviews / pageSize
     var result : Seq[Review] = Seq()
     try{
       (1 to npages).foreach(i => {
-        val ret = HttpManager.requestUserReviews(author_id, connectionProperties, pagesize, i)
+        val ret = HttpManager.requestUserReviews(author_id, pagesize = pageSize, pageNumber = i)
         if(ret.isEmpty){
           logger.error(s"Could not retrieve user reviews for id ${author_id}")
           return None
@@ -451,9 +436,9 @@ object Extractor extends Logging{
         return None
       case aae : APIAuthorizationException =>
         logger.fatal(aae)
-        val newProps = HttpManager.resetToken(connectionProperties)
-        if(newProps.isDefined) {
-          val rt = extractUserReviews(author_id, newProps.get, csvDelimiter, nreviews)
+        val newProps = HttpManager.resetToken
+        if(HttpManager.resetToken) {
+          val rt = extractUserReviews(author_id,  csvDelimiter, nReviews)
           if(rt.isEmpty)
             None
           else
@@ -464,18 +449,28 @@ object Extractor extends Logging{
     }
   }
 
-  def extractRecipeFromReviews(author: User, reviews: Seq[Review], newIDs: Set[Long], connectionProperties : Properties, csvDelimiter : String) : (Seq[Recipe], Seq[Long]) = {
+  def extractRecipeFromReviews(author: User, reviews: Seq[Review], newIDs: Set[Long], csvDelimiter : String) : (Seq[Recipe], Seq[Long]) = {
 
-    val delay = connectionProperties.getProperty("delay-recipe").toLong
-    val nrecipes_delay = connectionProperties.getProperty("nrecipes").toLong
-    val delay_nrecipes = connectionProperties.getProperty("delay-nrecipes").toLong
+    val daoDB = DatabaseDAO.getInstance()
+
+    val delay = HttpManager.getProperty("delay-recipe").toLong
+    val nrecipes_delay = HttpManager.getProperty("nrecipes").toLong
+    val delay_nrecipes = HttpManager.getProperty("delay-nrecipes").toLong
     var nrecipes = 0
     var new_recipes: Seq[Recipe] = Seq()
     var repeated_recipes: Seq[Long] = Seq()
     reviews.foreach(review => {
       val id = review.recipe.id
-      if(!newIDs.contains(id)) {
-        val potRecipe = extractRecipe(author.id, review.recipe.weburl, review.recipe.apiurl, connectionProperties, csvDelimiter)
+      var exists = false
+      //DB check
+      try {
+        exists = daoDB.existsRecipe(id.toString)
+      } catch {
+        case sql : SQLException =>
+          logger.error(sql.getMessage)
+      }
+      if(!exists && !newIDs.contains(id)) {
+        val potRecipe = extractRecipe(author.id, review.recipe.weburl, review.recipe.apiurl, csvDelimiter)
         if (potRecipe.isDefined) {
           nrecipes += 1
           if (nrecipes % nrecipes_delay == 0) {
@@ -494,9 +489,9 @@ object Extractor extends Logging{
     (new_recipes, repeated_recipes)
   }
 
-  def extractCategories(url : String, connectionProperties : Properties) : Option[JSONArray] = {
+  def extractCategories(url : String) : Option[JSONArray] = {
     try{
-      val ret = HttpManager.requestCategory(url, connectionProperties)
+      val ret = HttpManager.requestCategory(url)
       if(ret.isEmpty){
         logger.error(s"Could not retrieve categories for URL ${url}")
         return None
@@ -514,9 +509,8 @@ object Extractor extends Logging{
         None
       case aae : APIAuthorizationException =>
         logger.fatal(aae)
-        val newProps = HttpManager.resetToken(connectionProperties)
-        if(newProps.isDefined) {
-          val rt = extractCategories(url, newProps.get)
+        if(HttpManager.resetToken) {
+          val rt = extractCategories(url)
           if(rt.isEmpty)
             None
           else

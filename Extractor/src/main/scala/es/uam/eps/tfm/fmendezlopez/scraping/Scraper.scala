@@ -24,6 +24,7 @@ object Scraper extends Logging{
 
   private var properties : Configuration = _
   private var baseURL : String = _
+  private var baseURLRecipeWeb : String = _
   private var nutritionKeys : Seq[String] = _
   private var nutritionMapping : Map[String, String] = _
   private var footnotesKeys : Map[String, String] = _
@@ -31,6 +32,7 @@ object Scraper extends Logging{
   def setProperties(properties : Configuration) : Unit = {
     this.properties = properties
     baseURL = properties.getString("allrecipes.url.base")
+    baseURLRecipeWeb = properties.getString("allrecipes.url.recipe")
 
     val nutritionStr = properties.getString("general.scraping.recipe.nutrition.keys")
     nutritionKeys = Seq()
@@ -47,7 +49,7 @@ object Scraper extends Logging{
     footnotesStr.split('|').foreach(str => footnotesKeys += (str -> ""))
   }
 
-  def scrapeRecipe(author_id: Long, json: String, html: String, csvSeparator: String, baseCategory: Long): Recipe = {
+  def scrapeRecipe(json: String, html: Option[String], csvSeparator: String, baseCategory: Long, similarThreshold: Int): Recipe = {
     val mainJSON = new JSONObject(json)
     val result = new Recipe()
     var id : Long = -1
@@ -60,13 +62,13 @@ object Scraper extends Logging{
     val apiurl =
       if(links.has("self") && !links.isNull("self")) links.getJSONObject("self").getString("href")
       else ""
-    result.weburl_=(weburl)
     id = Utils.deduceRecipeID(prior_id, weburl, apiurl)
     result.id_=(id)
+    if(weburl.isEmpty) weburl = Utils.compoundRecipeURL(id.toString, baseURLRecipeWeb)
+    result.weburl_=(weburl)
     val json_author = mainJSON.getJSONObject("submitter")
     val author = new Author
-    //author.id_=(json_author.getLong("userID"))
-    author.id_=(author_id)
+    author.id_=(json_author.getLong("userID"))
     author.url_=(baseURL + json_author.getString("profileUrl"))
     result.author_=(author)
     result.rating_=(mainJSON.getDouble("ratingAverage"))
@@ -100,18 +102,34 @@ object Scraper extends Logging{
     else{
       result.notes_=(Seq("","","",""))
     }
+    result.madeit_=(mainJSON.getInt("madeItCount"))
     if(!html.isEmpty) {
-      result.madeit_=(scrapeMadeIt(html))
-      val category = scrapeCategory(html, baseCategory)
-      result.category_=(category)
+      if(!html.get.isEmpty){
+        val category = scrapeCategory(html.get, baseCategory)
+        result.category_=(category)
+      }
     }
     else {
-      result.madeit_=(0)
       val cat = new RecipeCategory
       cat.id_=(-1)
-      cat.url_=("")
       result.category_=(cat)
     }
+
+    if(mainJSON.has("similarRecipes") && !mainJSON.isNull("similarRecipes")){
+      val similar = mainJSON.getJSONObject("similarRecipes")
+      if(similar.has("recipes") && !similar.isNull("recipes")){
+        var i = 0
+        val similarArr = similar.getJSONArray("recipes")
+        var similarRecipes: Seq[Long] = Seq()
+        while(i < similarArr.length() && i < similarThreshold){
+          val similarJSON = similarArr.getJSONObject(i)
+          similarRecipes :+= similarJSON.getLong("recipeID")
+          i += 1
+        }
+        result.similarRecipes_=(similarRecipes)
+      }
+    }
+
     result
   }
 
@@ -362,7 +380,7 @@ object Scraper extends Logging{
     val category = new RecipeCategory
     val browser = JsoupBrowser()
     val doc = browser.parseString(html)
-    val uls = doc.body >> elementList("ul.breadcrumbs")
+    val uls = doc.body >> elementList("ol.breadcrumbs")
     if(uls.isEmpty){
       category.id_=(baseCategory)
       category.url_=(baseURL)
@@ -409,12 +427,13 @@ object Scraper extends Logging{
       recipe.id_=(json_recipe.getLong("recipeID"))
       var rec_url = ""
       val links = json_recipe.getJSONObject("links")
-      val weburl =
+      var weburl =
         if(links.has("recipeUrl") && !links.isNull("recipeUrl")) links.getJSONObject("recipeUrl").getString("href")
         else ""
       val apiurl =
         if(links.has("parent") && !links.isNull("parent")) links.getJSONObject("parent").getString("href").replace(csvSeparator, " ")
         else ""
+      if(weburl.isEmpty) weburl = Utils.compoundRecipeURL(id.toString, baseURLRecipeWeb)
       recipe.apiurl_=(apiurl)
       recipe.weburl_=(weburl)
 

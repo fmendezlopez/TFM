@@ -84,6 +84,19 @@ object HttpManager extends Logging{
     this.connectionProperties = connectionProperties
   }
 
+  def setProperty(property: String, value: AnyRef): Unit = {
+    if(connectionProperties.isDefinedAt(property)){
+      connectionProperties.replace(property, value)
+    }
+    else{
+      connectionProperties.put(property, value)
+    }
+  }
+
+  def getProperty(property: String): String = {
+    connectionProperties.getProperty(property)
+  }
+
   def requestAuthToken(): Option[Map[String, String]] ={
     val url = webURLs("base")
     makeAuthRequest(url)
@@ -139,23 +152,7 @@ object HttpManager extends Logging{
   @throws(classOf[ScrapingDetectionException])
   def requestCategory(url : String, connectionProperties : Properties = connectionProperties) : Option[String] = {
 
-    val connection = Jsoup.connect(url)
-
-    connection.userAgent(selectUserAgent)
-    connection.timeout(connectionProperties.getProperty("timeout").toInt)
-    connection.maxBodySize(connectionProperties.getProperty("max-body-size").toInt)
-    connection.followRedirects(false)
-    connection.referrer(connectionProperties.getProperty("referrer"))
-    connection.ignoreHttpErrors(true)
-
-    connection.method(Connection.Method.GET)
-    connection.header("Host", connectionProperties.getProperty("host"))
-    connection.header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-    connection.header("Connection", "keep-alive")
-    connection.header("Accept-Encoding", "gzip, deflate")
-    connection.header("Connection", "keep-alive")
-    connection.header("Upgrade-Insecure-Requests", "1")
-    connection.cookie(connectionProperties.getProperty("cookie-token"), connectionProperties.getProperty("auth-token"))
+    val connection = getWebConnectionWithCookie(url, connectionProperties)
 
     var times = 0
     val maxTimes = connectionProperties.getProperty("max-attempts").toInt
@@ -180,7 +177,7 @@ object HttpManager extends Logging{
             logger.warn(s"Requesting another token...")
             val res = requestAuthToken()
             if(res.isEmpty){
-              throw new ScrapingDetectionException(s"Scraped detected when trying to get auth token ${url}")
+              throw new ScrapingDetectionException(s"Scraped detected while trying to get auth token ${url}")
             }
             connectionProperties.put("auth-token", res.get)
             connection.header("Authorization", connectionProperties.getProperty("auth-token"))
@@ -188,7 +185,7 @@ object HttpManager extends Logging{
             logger.error(s"Scraper detected!\nSleeping ${delayDetection}...")
             if (times == maxTimes) {
               logger.error("Scraper detected again. Aborting program...")
-              throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+              throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
             }
             times += 1
             Thread.sleep(delayDetection)
@@ -215,7 +212,14 @@ object HttpManager extends Logging{
     }
   }
 
-  def getWebConnection(url : String, connectionProperties: Properties) : Connection = {
+  def getWebConnection(url: String, properties: Properties): Connection = {
+    connectionProperties.getProperty("use-cookies").toBoolean match {
+      case true => getWebConnectionWithCookie(url, properties)
+      case false => getWebConnectionNoCookie(url, properties)
+    }
+  }
+
+  def getWebConnectionNoCookie(url : String, connectionProperties: Properties) : Connection = {
     val connection = Jsoup.connect(url)
 
     connection.userAgent(selectUserAgent)
@@ -227,30 +231,33 @@ object HttpManager extends Logging{
 
     connection.method(Connection.Method.GET)
     connection.header("Host", connectionProperties.getProperty("host"))
-    connection.header("Accept", "text/html,application/xhtml+x…lication/xml;q=0.9,*/*;q=0.8")
+    connection.header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
     connection.header("Accept-Encoding", "gzip, deflate, br")
     connection.header("Accept-Language", "es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3")
     connection.header("Connection", "keep-alive")
     connection.header("Upgrade-Insecure-Requests", "1")
+    connection
+  }
 
+  def getWebConnectionWithCookie(url : String, connectionProperties: Properties) : Connection = {
+    val connection = getWebConnectionNoCookie(url, connectionProperties)
     connection.cookie(s"${properties.getString("general.scraping.cookiename.arsiteuser")}", connectionProperties.getProperty("ar_user"))
     connection.cookie(s"${properties.getString("general.scraping.cookiename.arsession")}", connectionProperties.getProperty("ar_session"))
     connection.cookie(s"${properties.getString("general.scraping.cookiename.artoken")}", connectionProperties.getProperty("ar_token"))
     connection
   }
 
-  def resetToken(connectionProperties : Properties) : Option[Properties] = {
+  def resetToken: Boolean = {
     val res = requestAuthToken()
     if(res.isEmpty)
-      None
+      return false
     val map = res.get
-    val newProps = connectionProperties
-    newProps.replace("ar_token", map("ar_token"))
-    newProps.replace("ar_user", map("ar_user"))
-    newProps.replace("ar_session", map("ar_session"))
-    newProps.replace("auth-token", s"${properties.getString("general.scraping.auth.token.prefix")} ${connectionProperties.getProperty("ar_token")}")
-    logger.debug(s"NEW-TOKEN: ${newProps.getProperty("auth-token")}")
-    Some(newProps)
+    setProperty("ar_token", map("ar_token"))
+    setProperty("ar_user", map("ar_user"))
+    setProperty("ar_session", map("ar_session"))
+    setProperty("auth-token", s"${properties.getString("general.scraping.auth.token.prefix")} ${connectionProperties.getProperty("ar_token")}")
+    logger.debug(s"NEW-TOKEN: ${connectionProperties.getProperty("auth-token")}")
+    true
   }
   @throws(classOf[ScrapingDetectionException])
   @throws(classOf[APIAuthorizationException])
@@ -270,7 +277,6 @@ object HttpManager extends Logging{
     val delayAuth = connectionProperties.getProperty("delay-auth").toInt
     val max_times_notfound = connectionProperties.getProperty("max-times-301").toInt
     var notFound = 0
-
 
     var continue = true
     var ret: Option[String] = None
@@ -303,7 +309,7 @@ object HttpManager extends Logging{
             logger.error(s"Scraper detected!\nSleeping ${delayDetection}...")
             if (times == maxTimes) {
               logger.error("Scraper detected again. Aborting program...")
-              throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+              throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
             }
             times += 1
             Thread.sleep(delayDetection)
@@ -313,20 +319,22 @@ object HttpManager extends Logging{
         }
       } catch {
         case mue: MalformedURLException =>
-          mue.printStackTrace()
+          logger.error(mue)
           None
         case ume: UnsupportedMimeTypeException =>
-          ume.printStackTrace()
+          logger.error(ume)
           None
         case ste: SocketTimeoutException =>
+          logger.error(ste)
           if (times == maxTimes) {
             logger.error("Scraper detected again. Aborting program...")
-            throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+            throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
           }
           times += 1
           continue = true
+          Thread.sleep(delayDetection + times)
         case ioe: IOException =>
-          ioe.printStackTrace()
+          logger.error(ioe)
           None
       }
     } while (continue)
@@ -378,7 +386,7 @@ object HttpManager extends Logging{
             logger.error(s"Scraper detected!\nSleeping ${delayDetection}...")
             if (times == maxTimes) {
               logger.error("Scraper detected again. Aborting program...")
-              throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+              throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
             }
             times += 1
             Thread.sleep(delayDetection)
@@ -388,21 +396,22 @@ object HttpManager extends Logging{
         }
       } catch {
         case mue: MalformedURLException =>
-          mue.printStackTrace()
+          logger.error(mue)
           None
         case ume: UnsupportedMimeTypeException =>
-          ume.printStackTrace()
+          logger.error(ume)
           None
         case ste: SocketTimeoutException =>
-          ste.printStackTrace()
+          logger.error(ste)
           if (times == maxTimes) {
             logger.error("Scraper detected again. Aborting program...")
-            throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+            throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
           }
           times += 1
           continue = true
+          Thread.sleep(delayDetection + times)
         case ioe: IOException =>
-          ioe.printStackTrace()
+          logger.error(ioe)
           None
       }
     } while (continue)
@@ -467,7 +476,7 @@ object HttpManager extends Logging{
             logger.error(s"Scraper detected!\nSleeping ${delayDetection}...")
             if (times == maxTimes) {
               logger.error("Scraper detected again. Aborting program...")
-              throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+              throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
             }
             times += 1
             Thread.sleep(delayDetection)
@@ -477,21 +486,22 @@ object HttpManager extends Logging{
         }
       } catch {
         case mue: MalformedURLException =>
-          mue.printStackTrace()
+          logger.error(mue)
           None
         case ume: UnsupportedMimeTypeException =>
-          ume.printStackTrace()
+          logger.error(ume)
           None
         case ste: SocketTimeoutException =>
+          logger.error(ste)
           if (times == maxTimes) {
             logger.error("Scraper detected again. Aborting program...")
-            throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+            throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
           }
           times += 1
           continue = true
-          None
+          Thread.sleep(delayDetection + times)
         case ioe: IOException =>
-          ioe.printStackTrace()
+          logger.error(ioe)
           None
       }
     } while (continue)
@@ -555,7 +565,7 @@ object HttpManager extends Logging{
             logger.error(s"Scraper detected!\nSleeping ${delayDetection}...")
             if (times == maxTimes) {
               logger.error("Scraper detected again. Aborting program...")
-              throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+              throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
             }
             times += 1
             Thread.sleep(delayDetection)
@@ -565,21 +575,22 @@ object HttpManager extends Logging{
         }
       } catch {
         case mue: MalformedURLException =>
-          mue.printStackTrace()
+          logger.error(mue)
           None
         case ume: UnsupportedMimeTypeException =>
-          ume.printStackTrace()
+          logger.error(ume)
           None
         case ste: SocketTimeoutException =>
+          logger.error(ste)
           if (times == maxTimes) {
             logger.error("Scraper detected again. Aborting program...")
-            throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+            throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
           }
           times += 1
           continue = true
-          None
+          Thread.sleep(delayDetection + times)
         case ioe: IOException =>
-          ioe.printStackTrace()
+          logger.error(ioe)
           None
       }
     } while (continue)
@@ -631,7 +642,7 @@ object HttpManager extends Logging{
             logger.error(s"Scraper detected!\nSleeping ${delayDetection}...")
             if (times == maxTimes) {
               logger.error("Scraper detected again. Aborting program...")
-              throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+              throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
             }
             times += 1
             Thread.sleep(delayDetection)
@@ -641,22 +652,23 @@ object HttpManager extends Logging{
         }
       } catch {
         case mue: MalformedURLException =>
-          mue.printStackTrace()
-          return None
+          logger.error(mue)
+          None
         case ume: UnsupportedMimeTypeException =>
-          ume.printStackTrace()
-          return None
+          logger.error(ume)
+          None
         case ste: SocketTimeoutException =>
-          ste.printStackTrace()
+          logger.error(ste)
           if (times == maxTimes) {
             logger.error("Scraper detected again. Aborting program...")
-            throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+            throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
           }
           times += 1
           continue = true
+          Thread.sleep(delayDetection + times)
         case ioe: IOException =>
-          ioe.printStackTrace()
-          return None
+          logger.error(ioe)
+          None
       }
     } while (continue)
     ret
@@ -711,7 +723,7 @@ object HttpManager extends Logging{
             logger.error(s"Scraper detected!\nSleeping ${delayDetection}...")
             if (times == maxTimes) {
               logger.error("Scraper detected again. Aborting program...")
-              throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+              throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
             }
             times += 1
             Thread.sleep(delayDetection)
@@ -721,21 +733,22 @@ object HttpManager extends Logging{
         }
       } catch {
         case mue: MalformedURLException =>
-          mue.printStackTrace()
+          logger.error(mue)
           None
         case ume: UnsupportedMimeTypeException =>
-          ume.printStackTrace()
+          logger.error(ume)
           None
         case ste: SocketTimeoutException =>
+          logger.error(ste)
           if (times == maxTimes) {
             logger.error("Scraper detected again. Aborting program...")
-            throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+            throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
           }
           times += 1
           continue = true
-          None
+          Thread.sleep(delayDetection + times)
         case ioe: IOException =>
-          ioe.printStackTrace()
+          logger.error(ioe)
           None
       }
     } while (continue)
@@ -812,7 +825,7 @@ object HttpManager extends Logging{
             logger.error(s"Scraper detected!\nSleeping ${delayDetection}...")
             if(times == maxTimes){
               logger.error("Scraper detected again. Aborting program...")
-              throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+              throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
             }
             times += 1
             Thread.sleep(delayDetection)
@@ -821,23 +834,24 @@ object HttpManager extends Logging{
             ret = Some(response.body())
         }
       } catch {
-        case mue : MalformedURLException =>
-          mue.printStackTrace()
-          return None
-        case ume : UnsupportedMimeTypeException =>
-          ume.printStackTrace()
-          return None
-        case ste : SocketTimeoutException =>
-          ste.printStackTrace()
+        case mue: MalformedURLException =>
+          logger.error(mue)
+          None
+        case ume: UnsupportedMimeTypeException =>
+          logger.error(ume)
+          None
+        case ste: SocketTimeoutException =>
+          logger.error(ste)
           if (times == maxTimes) {
             logger.error("Scraper detected again. Aborting program...")
-            throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+            throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
           }
           times += 1
           continue = true
-        case ioe : IOException =>
-          ioe.printStackTrace()
-          return None
+          Thread.sleep(delayDetection + times)
+        case ioe: IOException =>
+          logger.error(ioe)
+          None
       }
     }while(continue)
     ret
@@ -913,7 +927,7 @@ object HttpManager extends Logging{
             logger.error(s"Scraper detected!\nSleeping ${delayDetection}...")
             if (times == maxTimes) {
               logger.error("Scraper detected again. Aborting program...")
-              throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+              throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
             }
             times += 1
             Thread.sleep(delayDetection + times)
@@ -923,23 +937,23 @@ object HttpManager extends Logging{
         }
       } catch {
         case mue: MalformedURLException =>
-          mue.printStackTrace()
-          return None
+          logger.error(mue)
+          None
         case ume: UnsupportedMimeTypeException =>
-          ume.printStackTrace()
-          return None
+          logger.error(ume)
+          None
         case ste: SocketTimeoutException =>
-          ste.printStackTrace()
+          logger.error(ste)
           if (times == maxTimes) {
             logger.error("Scraper detected again. Aborting program...")
-            throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+            throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
           }
           times += 1
           continue = true
           Thread.sleep(delayDetection + times)
         case ioe: IOException =>
-          ioe.printStackTrace()
-          return None
+          logger.error(ioe)
+          None
       }
     } while (continue)
     ret
@@ -983,7 +997,7 @@ object HttpManager extends Logging{
             logger.error(s"Scraper detected!\nSleeping ${delayDetection}...")
             if(times == maxTimes){
               logger.error("Scraper detected again. Aborting program...")
-              throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+              throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
             }
             times += 1
             Thread.sleep(delayDetection)
@@ -1055,7 +1069,7 @@ object HttpManager extends Logging{
             logger.error(s"Scraper detected!\nSleeping ${delayDetection}...")
             if(times == maxTimes){
               logger.error("Scraper detected again. Aborting program...")
-              throw new ScrapingDetectionException(s"Scraped detected when trying to GET ${url}")
+              throw new ScrapingDetectionException(s"Scraped detected while trying to GET ${url}")
             }
             times += 1
             Thread.sleep(delayDetection)

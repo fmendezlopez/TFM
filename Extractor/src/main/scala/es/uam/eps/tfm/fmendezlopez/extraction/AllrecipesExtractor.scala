@@ -6,16 +6,20 @@ import java.util.Properties
 
 import com.github.tototoshi.csv.{CSVReader, CSVWriter}
 import es.uam.eps.tfm.fmendezlopez.dao.DatabaseDAO
-import es.uam.eps.tfm.fmendezlopez.dto.{Recipe, Review, User}
-import es.uam.eps.tfm.fmendezlopez.scraping.Scraper
+import es.uam.eps.tfm.fmendezlopez.dto._
+import es.uam.eps.tfm.fmendezlopez.exception.{APIAuthorizationException, APILoginException, ScrapingDetectionException}
+import es.uam.eps.tfm.fmendezlopez.scraping.Extractor.logger
+import es.uam.eps.tfm.fmendezlopez.scraping.{Extractor, Scraper}
 import es.uam.eps.tfm.fmendezlopez.utils._
 import org.apache.commons.configuration2.Configuration
 import org.json.{JSONArray, JSONObject}
 
+import scala.collection.mutable
+
 /**
   * Created by franm on 25/06/2017.
   */
-object Stage4 extends Logging{
+object AllrecipesExtractor extends Logging{
 
   private var properties : Configuration = _
   private var connectionProperties : Properties = _
@@ -28,8 +32,9 @@ object Stage4 extends Logging{
   private var csvNutrition : CSVWriter = _
   private var csvRelationshipUser : CSVWriter = _
   private var csvRelationshipRecipe : CSVWriter = _
-  private var csvRecipesUrls : CSVWriter = _
   private var csvUsersUrls : CSVWriter = _
+  private var csvAuthorship : CSVWriter = _
+  private var csvSimilarity : CSVWriter = _
 
   def main(args: Array[String]): Unit = {
 
@@ -57,6 +62,20 @@ object Stage4 extends Logging{
           state = JSONManager.jsonFromFile(statusFile)
         }
         stage1(inputPath, state, fromScratch)
+
+      case 2 =>
+        val fromScratch = args(2).toBoolean
+        val inputFileName = args(3)
+
+        var state : JSONObject = new JSONObject()
+        if(fromScratch){
+          state.put("lastLine", 0)
+        }
+        else{
+          val statusFile : String = args(4)
+          state = JSONManager.jsonFromFile(statusFile)
+        }
+        stage2(inputFileName, state, fromScratch)
     }
   }
 
@@ -91,20 +110,16 @@ object Stage4 extends Logging{
     connectionProperties.put("delay-recipe-list", properties.getProperty("stage4.stage1.scraping.delay.recipe_list"))
     connectionProperties.put("max-times-301", properties.getProperty("general.extraction.http.max.times.301"))
     connectionProperties.put("default-category", properties.getProperty("stage4.stage1.scraping.recipe.category.default"))
+    connectionProperties.put("similar-threshold", properties.getProperty("stage4.stage1.scraping.recipe.similar-threshold"))
+    connectionProperties.put("base-recipe-web", properties.getString("allrecipes.url.recipe"))
+    connectionProperties.put("use-cookies", properties.getString("stage4.stage1.scraping.use-cookies"))
 
     HttpManager.setProperties(properties)
     HttpManager.setConnectionProperties(connectionProperties)
-    val res = HttpManager.requestAuthToken()
-    if(res.isEmpty){
+    if(!HttpManager.resetToken){
       logger.fatal("Cannot retrieve auth token\nFinishing...")
       System.exit(1)
     }
-    connectionProperties.put("ar_token", res.get("ar_token"))
-    connectionProperties.put("ar_user", res.get("ar_user"))
-    connectionProperties.put("ar_session", res.get("ar_session"))
-    connectionProperties.put("auth-token", s"${properties.getString("general.scraping.auth.token.prefix")} ${connectionProperties.getProperty("ar_token")}")
-    logger.debug(s"Initial AUTH-TOKEN: ${connectionProperties.getProperty("auth-token")}")
-    HttpManager.setConnectionProperties(connectionProperties)
 
     //DB access
     val daoDB = DatabaseDAO.getInstance()
@@ -142,19 +157,21 @@ object Stage4 extends Logging{
     val csvNutritionName : String = properties.getString("stage4.stage1.output.csv.nutrition.filename")
     val csvRelationshipUserName : String = properties.getString("stage4.stage1.output.csv.relationship_user.filename")
     val csvRelationshipRecipeName : String = properties.getString("stage4.stage1.output.csv.relationship_recipe.filename")
-    val csvRecipesURLsName : String = properties.getString("stage4.stage1.output.csv.recipes_urls.filename")
     val csvUserURLsName : String = properties.getString("stage4.stage1.output.csv.users_urls.filename")
+    val csvAuthorshipName : String = properties.getString("stage4.stage1.output.csv.authorship.filename")
+    val csvSimilarityName : String = properties.getString("stage4.stage1.output.csv.similarity.filename")
 
-    csvUsers = CSVManager.openCSVWriter(outputDir, csvUsersName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvRecipes = CSVManager.openCSVWriter(outputDir, csvRecipesName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvIngredients = CSVManager.openCSVWriter(outputDir, csvIngredientsName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvReviews = CSVManager.openCSVWriter(outputDir, csvReviewsName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvSteps = CSVManager.openCSVWriter(outputDir, csvStepsName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvNutrition = CSVManager.openCSVWriter(outputDir, csvNutritionName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvRelationshipUser = CSVManager.openCSVWriter(outputDir, csvRelationshipUserName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvRelationshipRecipe = CSVManager.openCSVWriter(outputDir, csvRelationshipRecipeName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvRecipesUrls = CSVManager.openCSVWriter(outputDir, csvRecipesURLsName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvUsersUrls = CSVManager.openCSVWriter(outputDir, csvUserURLsName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
+    csvUsers = CSVManager.openCSVWriter(outputDir, csvUsersName, inCSVDelimiter.charAt(0), !fromScratch)
+    csvRecipes = CSVManager.openCSVWriter(outputDir, csvRecipesName, inCSVDelimiter.charAt(0), !fromScratch)
+    csvIngredients = CSVManager.openCSVWriter(outputDir, csvIngredientsName, inCSVDelimiter.charAt(0), !fromScratch)
+    csvReviews = CSVManager.openCSVWriter(outputDir, csvReviewsName, inCSVDelimiter.charAt(0), !fromScratch)
+    csvSteps = CSVManager.openCSVWriter(outputDir, csvStepsName, inCSVDelimiter.charAt(0), !fromScratch)
+    csvNutrition = CSVManager.openCSVWriter(outputDir, csvNutritionName, inCSVDelimiter.charAt(0), !fromScratch)
+    csvRelationshipUser = CSVManager.openCSVWriter(outputDir, csvRelationshipUserName, inCSVDelimiter.charAt(0), !fromScratch)
+    csvRelationshipRecipe = CSVManager.openCSVWriter(outputDir, csvRelationshipRecipeName, inCSVDelimiter.charAt(0), !fromScratch)
+    csvUsersUrls = CSVManager.openCSVWriter(outputDir, csvUserURLsName, inCSVDelimiter.charAt(0), !fromScratch)
+    csvAuthorship = CSVManager.openCSVWriter(outputDir, csvAuthorshipName, inCSVDelimiter.charAt(0), !fromScratch)
+    csvSimilarity = CSVManager.openCSVWriter(outputDir, csvSimilarityName, inCSVDelimiter.charAt(0), !fromScratch)
 
     if(fromScratch) {
       csvUsers.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.users.header"), outCSVDelimiter.charAt(0)))
@@ -165,8 +182,9 @@ object Stage4 extends Logging{
       csvNutrition.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.nutrition.header"), outCSVDelimiter.charAt(0)))
       csvRelationshipUser.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.relationship_user.header"), outCSVDelimiter.charAt(0)))
       csvRelationshipRecipe.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.relationship_recipe.header"), outCSVDelimiter.charAt(0)))
-      csvRecipesUrls.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.recipes_urls.header"), outCSVDelimiter.charAt(0)))
       csvUsersUrls.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.users_urls.header"), outCSVDelimiter.charAt(0)))
+      csvAuthorship.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.authorship.header"), outCSVDelimiter.charAt(0)))
+      csvSimilarity.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.similarity.header"), outCSVDelimiter.charAt(0)))
     }
     var csvReader : CSVReader = null
 
@@ -180,8 +198,9 @@ object Stage4 extends Logging{
       CSVManager.closeCSVWriter(csvNutrition)
       CSVManager.closeCSVWriter(csvRelationshipUser)
       CSVManager.closeCSVWriter(csvRelationshipRecipe)
-      CSVManager.closeCSVWriter(csvRecipesUrls)
       CSVManager.closeCSVWriter(csvUsersUrls)
+      CSVManager.closeCSVWriter(csvAuthorship)
+      CSVManager.closeCSVWriter(csvSimilarity)
     }
 
     val files = Utils.getInputFiles(inputPath)
@@ -234,8 +253,8 @@ object Stage4 extends Logging{
 
           else {
             logger.info("Getting user profile...")
-            connectionProperties.put("referrer", properties.getProperty("allrecipes.url.base"))
-            val potUser = Extractor.extractUser(id, connectionProperties, inCSVDelimiter)
+            HttpManager.setProperty("referrer", properties.getProperty("allrecipes.url.base"))
+            val potUser = Extractor.extractUser(id, inCSVDelimiter)
             if (potUser.isEmpty) {
               logger.fatal("Stopping...")
               beforeExit
@@ -250,7 +269,7 @@ object Stage4 extends Logging{
               Thread.sleep(500)
 
               logger.info("Getting user following...")
-              val potFollowing = Extractor.extractFollowing(id, connectionProperties, inCSVDelimiter, max_userfollowing)
+              val potFollowing = Extractor.extractFollowing(id, inCSVDelimiter, max_userfollowing)
               if (potFollowing.isEmpty) {
                 logger.fatal("Stopping...")
                 beforeExit
@@ -260,7 +279,7 @@ object Stage4 extends Logging{
               logger.info(s"Got ${following.length} following")
 
               logger.info("Getting user followers...")
-              val potFollowers = Extractor.extractFollowers(id, connectionProperties, inCSVDelimiter, max_userfollower)
+              val potFollowers = Extractor.extractFollowers(id, inCSVDelimiter, max_userfollower)
               if (potFollowers.isEmpty) {
                 logger.fatal("Stopping...")
                 beforeExit
@@ -270,10 +289,10 @@ object Stage4 extends Logging{
               logger.info(s"Got ${followers.length} followers")
               Thread.sleep(500)
 
-              connectionProperties.replace("referrer", user.profileUrl)
+              HttpManager.setProperty("referrer", user.profileUrl)
 
               logger.info("Getting user recipes...")
-              val potUserRecipes = Extractor.extractUserRecipes(user, connectionProperties, outCSVDelimiter, maxrecipes)
+              val potUserRecipes = Extractor.extractUserRecipes(user, outCSVDelimiter, maxrecipes)
               if (potUserRecipes.isEmpty) {
                 logger.fatal("Impossible to extract user recipes.\nClosing...")
                 System.exit(1)
@@ -283,7 +302,7 @@ object Stage4 extends Logging{
               var new_recipes: Map[String, Seq[Recipe]] = user_recipes._1
               val rep_recipes: Map[String, Seq[Long]] = user_recipes._2
 
-              var newIDs = new_recipes.values.reduce((a, b) => a ++ b).flatMap(r => Seq(r.id)).toSet
+              var newIDs: Set[Long] = new_recipes.values.reduce((a, b) => a ++ b).flatMap(r => Seq(r.id)).toSet
               val new_recipes_number = newIDs.size
               var rep_recipes_number = 0
               rep_recipes.values.foreach(rep_recipes_number += _.length)
@@ -293,7 +312,7 @@ object Stage4 extends Logging{
 
               if (len > 0) {
                 logger.info("Getting user reviews...")
-                val potReviews = Extractor.extractUserReviews(user.id, connectionProperties, outCSVDelimiter, max_userreviews)
+                val potReviews = Extractor.extractUserReviews(user.id, outCSVDelimiter, max_userreviews)
                 if (potReviews.isEmpty) {
                   logger.fatal("Stopping...")
                   beforeExit
@@ -304,7 +323,7 @@ object Stage4 extends Logging{
 
                 logger.info("Getting recipes from reviews...")
                 Thread.sleep(500)
-                val recipe_reviews = Extractor.extractRecipeFromReviews(user, reviews, newIDs, connectionProperties, outCSVDelimiter)
+                val recipe_reviews = Extractor.extractRecipeFromReviews(user, reviews, newIDs, outCSVDelimiter)
                 val new_recipe_reviews = recipe_reviews._1
                 val repeated_recipe_reviews = recipe_reviews._2
 
@@ -320,21 +339,23 @@ object Stage4 extends Logging{
                   "madeit" -> (new_recipes("madeit").map(_.id) ++ rep_recipes("madeit")),
                   "review" -> (new_recipe_reviews.map(_.id) ++ repeated_recipe_reviews)
                 )
-                rep_recipes.flatMap({case(list, seq) => Seq(1)})
 
                 val following = potFollowing.get.filter(_.id != user.id)
                 val followers = potFollowers.get.filter(_.id != user.id)
+
+                var authors: Set[Author] = new_recipes.values.reduce((a, b) => a ++ b).flatMap(r => Seq(r.author)).toSet
 
                 printUser(user, csvUsers)
                 printReviewList(potReviews.get, (csvReviews))
                 printUserFollowing(following, user, (csvUsers, csvRelationshipUser, csvUsersUrls))
                 printUserFollowers(followers, user, (csvUsers, csvRelationshipUser, csvUsersUrls))
-                printRecipeList(new_recipes, (csvRecipes, csvIngredients, csvSteps, csvNutrition, csvRecipesUrls))
+                printAuthorList(authors, csvUsersUrls)
+                printRecipeList(new_recipes, (csvRecipes, csvIngredients, csvSteps, csvNutrition, csvAuthorship, csvSimilarity))
                 printUserRecipesList(user.id, allrecipes, csvRelationshipRecipe)
 
                 nreviews += potReviews.get.length
                 total_users += 1
-                total_recipes += new_recipes_number + rep_recipes_number + new_recipe_reviews.length + repeated_recipe_reviews.length
+                total_recipes += new_recipes_number + new_recipe_reviews.length
 
                 logger.info(s"Extracted ${nreviews} reviews")
                 logger.info(s"Extracted ${total_recipes} recipes in total")
@@ -383,9 +404,7 @@ object Stage4 extends Logging{
     })
   }
 
-  /*
-  def stage2(inputPath : String, state : JSONObject, fromScratch : Boolean) = {
-
+  def stage2(inputFileName: String, state: JSONObject, fromScratch: Boolean) = {
     connectionProperties = new Properties()
     connectionProperties.put("timeout", properties.getProperty("stage4.stage1.scraping.delay.timeout"))
     connectionProperties.put("max-body-size", properties.getProperty("stage4.stage1.scraping.maxBodySize"))
@@ -400,295 +419,93 @@ object Stage4 extends Logging{
     connectionProperties.put("max-pagesize", properties.getProperty("stage4.stage1.scraping.maxpagesize"))
     connectionProperties.put("delay-recipe", properties.getProperty("stage4.stage1.scraping.delay.recipe"))
     connectionProperties.put("delay-nrecipes", properties.getProperty("stage4.stage1.scraping.delay.nrecipes"))
-    connectionProperties.put("nrecipes", properties.getProperty("stage4.stage1.scraping.nrecipes"))
-    connectionProperties.put("delay-recipe-list", properties.getProperty("stage4.stage1.scraping.delay.recipe_list"))
     connectionProperties.put("max-times-301", properties.getProperty("general.extraction.http.max.times.301"))
     connectionProperties.put("default-category", properties.getProperty("stage4.stage1.scraping.recipe.category.default"))
+    connectionProperties.put("use-cookies", properties.getString("stage4.stage2.scraping.use-cookies"))
 
     HttpManager.setProperties(properties)
     HttpManager.setConnectionProperties(connectionProperties)
-    val res = HttpManager.requestAuthToken()
-    if(res.isEmpty){
-      logger.fatal("Cannot retrieve auth token\nFinishing...")
-      System.exit(1)
-    }
-    connectionProperties.put("ar_token", res.get("ar_token"))
-    connectionProperties.put("ar_user", res.get("ar_user"))
-    connectionProperties.put("ar_session", res.get("ar_session"))
-    connectionProperties.put("auth-token", s"${properties.getString("general.scraping.auth.token.prefix")} ${connectionProperties.getProperty("ar_token")}")
-    logger.debug(s"Initial AUTH-TOKEN: ${connectionProperties.getProperty("auth-token")}")
-    HttpManager.setConnectionProperties(connectionProperties)
-
-    //DB access
-    val daoDB = DatabaseDAO.getInstance()
-    var total_users = 0
-    var total_recipes = 0
-    try {
-      daoDB.connectAndCreate
-      daoDB.configure()
-      total_users = daoDB.countUsers()
-      total_recipes = daoDB.countRecipes()
-    } catch {
-      case ie : InstantiationException =>
-        logger.fatal(ie.getMessage)
-      case iae : IllegalAccessException =>
-        logger.fatal(iae.getMessage)
-      case cnfe : ClassNotFoundException =>
-        logger.fatal(cnfe.getMessage)
-      case sql : SQLException =>
-        logger.fatal(sql.getMessage)
-    }
-
-    logger.info(s"Starting with ${total_users} users and ${total_recipes} recipes")
 
     val inCSVDelimiter = properties.getString("stage4.stage1.input.csv.delimiter")
     val outCSVDelimiter = properties.getString("stage4.stage1.output.csv.delimiter")
 
     val hostname = Utils.getHostName(properties.getString("general.extraction.default.hostname"))
-    val outputDir = Utils.resolvePath(4, 1, hostname)
+    val outputDir = Utils.resolvePath(4, 2, hostname)
 
-    val csvUsersName : String = properties.getString("stage4.stage1.output.csv.users.filename")
-    val csvRecipesName : String = properties.getString("stage4.stage1.output.csv.recipes.filename")
-    val csvIngredientsName : String = properties.getString("stage4.stage1.output.csv.ingredients.filename")
-    val csvReviewsName : String = properties.getString("stage4.stage1.output.csv.reviews.filename")
-    val csvStepsName : String = properties.getString("stage4.stage1.output.csv.steps.filename")
-    val csvNutritionName : String = properties.getString("stage4.stage1.output.csv.nutrition.filename")
-    val csvRelationshipUserName : String = properties.getString("stage4.stage1.output.csv.relationship_user.filename")
-    val csvRelationshipRecipeName : String = properties.getString("stage4.stage1.output.csv.relationship_recipe.filename")
-    val csvRecipesURLsName : String = properties.getString("stage4.stage1.output.csv.recipes_urls.filename")
-    val csvUserURLsName : String = properties.getString("stage4.stage1.output.csv.users_urls.filename")
+    val outputFileName: String = properties.getString("stage4.stage2.output.csv.recipes.filename")
 
-    csvUsers = CSVManager.openCSVWriter(outputDir, csvUsersName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvRecipes = CSVManager.openCSVWriter(outputDir, csvRecipesName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvIngredients = CSVManager.openCSVWriter(outputDir, csvIngredientsName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvReviews = CSVManager.openCSVWriter(outputDir, csvReviewsName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvSteps = CSVManager.openCSVWriter(outputDir, csvStepsName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvNutrition = CSVManager.openCSVWriter(outputDir, csvNutritionName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvRelationshipUser = CSVManager.openCSVWriter(outputDir, csvRelationshipUserName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvRelationshipRecipe = CSVManager.openCSVWriter(outputDir, csvRelationshipRecipeName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvRecipesUrls = CSVManager.openCSVWriter(outputDir, csvRecipesURLsName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
-    csvUsersUrls = CSVManager.openCSVWriter(outputDir, csvUserURLsName, inCSVDelimiter.charAt(0), !fromScratch, "UTF-8")
+    val csvWriter = CSVManager.openCSVWriter(outputDir, outputFileName, inCSVDelimiter.charAt(0), !fromScratch)
 
     if(fromScratch) {
-      csvUsers.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.users.header"), outCSVDelimiter.charAt(0)))
-      csvRecipes.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.recipes.header"), outCSVDelimiter.charAt(0)))
-      csvIngredients.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.ingredients.header"), outCSVDelimiter.charAt(0)))
-      csvReviews.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.reviews.header"), outCSVDelimiter.charAt(0)))
-      csvSteps.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.steps.header"), outCSVDelimiter.charAt(0)))
-      csvNutrition.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.nutrition.header"), outCSVDelimiter.charAt(0)))
-      csvRelationshipUser.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.relationship_user.header"), outCSVDelimiter.charAt(0)))
-      csvRelationshipRecipe.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.relationship_recipe.header"), outCSVDelimiter.charAt(0)))
-      csvRecipesUrls.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.recipes_urls.header"), outCSVDelimiter.charAt(0)))
-      csvUsersUrls.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.users_urls.header"), outCSVDelimiter.charAt(0)))
+      csvWriter.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.output.csv.recipes.header"), outCSVDelimiter.charAt(0)))
     }
-    var csvReader : CSVReader = null
+    val csvReader: CSVReader = CSVManager.openCSVReaderLines(new File(inputFileName), inCSVDelimiter.charAt(0), 1)
+    var lines = state.getInt("lastLine")
+    CSVManager.skipLines(csvReader, lines + 1, (ret) => if(ret.isEmpty)false else true)
 
     def beforeExit = {
       CSVManager.closeCSVReader(csvReader)
-      CSVManager.closeCSVWriter(csvUsers)
-      CSVManager.closeCSVWriter(csvRecipes)
-      CSVManager.closeCSVWriter(csvIngredients)
-      CSVManager.closeCSVWriter(csvReviews)
-      CSVManager.closeCSVWriter(csvSteps)
-      CSVManager.closeCSVWriter(csvNutrition)
-      CSVManager.closeCSVWriter(csvRelationshipUser)
-      CSVManager.closeCSVWriter(csvRelationshipRecipe)
-      CSVManager.closeCSVWriter(csvRecipesUrls)
-      CSVManager.closeCSVWriter(csvUsersUrls)
+      CSVManager.closeCSVWriter(csvWriter)
     }
 
-    val files = Utils.getInputFiles(inputPath)
-    val processedFiles = getProcessedFiles(state)
+    val delay = properties.getLong("stage4.stage2.scraping.delay.afterLine")
+    val nlines = properties.getLong("stage4.stage2.scraping.nlines")
+    val delay_nlines = properties.getLong("stage4.stage2.scraping.delay.nlines")
+    val baseCategory = connectionProperties.getProperty("default-category").toLong
 
-    val delay = properties.getLong("stage4.stage1.scraping.delay.afterLine")
-    val nlines = properties.getLong("stage4.stage1.scraping.nlines")
-    val delay_nlines = properties.getLong("stage4.stage1.scraping.delay.nlines")
+    csvReader.foreach(line => {
+      val webURL = line(13)
+      val id = line(1)
+      logger.info(s"Processing recipe ${id}")
+      try{
+        logger.debug(s"Extracting recipe with webURL ${webURL}")
+        val html_str = if(webURL.isEmpty) None else HttpManager.requestRecipeWebURL(webURL)
+        val category =
+        if(html_str.isEmpty){
+          logger.error(s"Could not retrieve recipe with url ${webURL} from WEB")
+          val cat = new RecipeCategory
+          cat.id_=(baseCategory)
+          cat
+        }
+        else{
+          Scraper.scrapeCategory(html_str.get, baseCategory)
+        }
+        val newLine: mutable.Seq[String] = mutable.Seq.empty[String] ++ line
+        newLine.update(2, category.id.toString)
+        csvWriter.writeRow(newLine)
 
-    val max_userreviews = properties.getInt("stage4.stage1.scraping.max.user.reviews")
-    val max_userfollowing = properties.getInt("stage4.stage1.scraping.max.user.following")
-    val max_userfollower = properties.getInt("stage4.stage1.scraping.max.user.follower")
-    val maxrecipes = properties.getInt("stage4.stage1.scraping.max_recipes_user")
-    val minrecipes = properties.getInt("stage4.stage1.scraping.minrecipes")
-    val minreviews = properties.getInt("stage4.stage1.scraping.minreviews")
+        lines += 1
+        state.put("lastLine", lines)
+        logger.info(s"Line $lines processed")
+        logger.info(s"${state.toString}")
+        if(lines % nlines == 0){
+          logger.info(s"$nlines lines processed. Sleeping...")
+          Thread.sleep(delay_nlines)
+        }
+        else{
+          logger.info("Sleeping...")
+          Thread.sleep(delay)
+        }
+        logger.info(s"Processed recipe ${id}")
+      } catch {
+        case sde : ScrapingDetectionException =>
+          logger.error(sde)
+          beforeExit
+          System.exit(1)
 
-    files.foreach(file => {
-      if(!processedFiles.contains(file)) {
-        var lines = state.getInt("lastLine")
-        state.put("currentFile", file.getName)
-        csvReader = CSVManager.openCSVReader(file, inCSVDelimiter.charAt(0))
-        CSVManager.skipLines(csvReader, lines + 1, (ret) => if(ret.isEmpty)false else true)
-
-        var nreviews = 0
-        var lines_processed = 0
-        csvReader.foreach(line => {
-          val id = line(1).toLong
-          logger.info(s"Processing user ${id}")
-
-          var exists = false
-
-          //DB check
-
-          try {
-            exists = daoDB.existsUser(id.toString)
-          } catch {
-            case e@(_: InstantiationException | _: IllegalAccessException | _: ClassNotFoundException | _: SQLException) =>
-              logger.fatal(e.getMessage)
-              try
-                daoDB.disconnect
-              catch {
-                case e1@(_: SQLException | _: IOException) =>
-                  logger.fatal(e1.getMessage)
-              }
-          }
-
-          if(exists){
-            logger.info(s"User ${id} has already been processed")
-          }
-
-          else {
-            logger.info("Getting user profile...")
-            connectionProperties.put("referrer", properties.getProperty("allrecipes.url.base"))
-            val potUser = Extractor.extractUser(id, connectionProperties, inCSVDelimiter)
-            if (potUser.isEmpty) {
-              logger.fatal("Stopping...")
-              beforeExit
-              System.exit(1)
-            }
-            val user = potUser.get
-            if(!isValidUser(user, minrecipes, minreviews)){
-              logger.warn(s"User has less than ${minrecipes} recipes. Discarded.")
-            }
-            else{
-              Thread.sleep(500)
-
-              logger.info("Getting user following...")
-              val potFollowing = Extractor.extractFollowing(id, connectionProperties, inCSVDelimiter, max_userfollowing)
-              if (potFollowing.isEmpty) {
-                logger.fatal("Stopping...")
-                beforeExit
-                System.exit(1)
-              }
-              val following = potFollowing.get
-              logger.info(s"Got ${following.length} following")
-
-              logger.info("Getting user followers...")
-              val potFollowers = Extractor.extractFollowers(id, connectionProperties, inCSVDelimiter, max_userfollower)
-              if (potFollowers.isEmpty) {
-                logger.fatal("Stopping...")
-                beforeExit
-                System.exit(1)
-              }
-              val followers = potFollowers.get
-              logger.info(s"Got ${followers.length} followers")
-              Thread.sleep(500)
-
-              connectionProperties.replace("referrer", user.profileUrl)
-
-              logger.info("Getting user recipes...")
-              val potUserRecipes = Extractor.extractUserRecipes(user, connectionProperties, outCSVDelimiter, maxrecipes)
-              if (potUserRecipes.isEmpty) {
-                logger.fatal("Impossible to extract user recipes.\nClosing...")
-                System.exit(1)
-              }
-
-              var new_recipes = 0
-              potUserRecipes.get._1.values.foreach(new_recipes += _.length)
-              var rep_recipes = 0
-              potUserRecipes.get._2.values.foreach(rep_recipes += _.length)
-              logger.info(s"Got ${new_recipes} recipes")
-
-              val len = new_recipes + rep_recipes
-
-              if (len > 0) {
-                logger.info("Getting user reviews...")
-                val potReviews = Extractor.extractUserReviews(user.id, connectionProperties, inCSVDelimiter, max_userreviews)
-                if (potReviews.isEmpty) {
-                  logger.fatal("Stopping...")
-                  beforeExit
-                  System.exit(1)
-                }
-                val reviews = potReviews.get
-                logger.info(s"Got ${reviews.length} reviews")
-
-                logger.info("Getting recipes from reviews...")
-                //val potRevRecipes = Extractor.extractRecipesFromReviews()
-
-                val following = potFollowing.get.filter(_.id != user.id)
-                val followers = potFollowers.get.filter(_.id != user.id)
-
-                printUser(user, csvUsers)
-                printReviewList(potReviews.get, (csvReviews))
-                printUserFollowing(following, user, (csvUsers, csvRelationshipUser, csvUsersUrls))
-                printUserFollowers(followers, user, (csvUsers, csvRelationshipUser, csvUsersUrls))
-                //printRecipeList(potUserRecipes.get._1, (csvRecipes, csvIngredients, csvSteps, csvNutrition, csvRecipesUrls))
-                printUserRecipesList(user.id, potUserRecipes.get, csvRelationshipRecipe)
-
-                try {
-                  total_recipes = daoDB.countRecipes()
-                } catch {
-                  case ie : InstantiationException =>
-                    logger.fatal(ie.getMessage)
-                  case iae : IllegalAccessException =>
-                    logger.fatal(iae.getMessage)
-                  case cnfe : ClassNotFoundException =>
-                    logger.fatal(cnfe.getMessage)
-                  case sql : SQLException =>
-                    logger.fatal(sql.getMessage)
-                }
-
-                nreviews += potReviews.get.length
-                total_users += 1
-                total_recipes += new_recipes
-
-                logger.info(s"Extracted ${nreviews} reviews")
-                logger.info(s"Extracted ${total_recipes} recipes in total")
-                logger.info(s"Extracted ${total_users} users in total")
-
-                //DB insertion
-                try {
-                  daoDB.insertUser(id.toString)
-                } catch {
-                  case sql : SQLException =>
-                    logger.fatal(sql.getMessage)
-                }
-
-                potUserRecipes.get._1.foreach({case(_, recipes) =>
-                  recipes.foreach(recipe =>
-                    //DB insertion
-                    try {
-                      daoDB.insertRecipe(recipe.id.toString)
-                    } catch {
-                      case sql : SQLException =>
-                        logger.fatal(sql.getMessage)
-                    }
-                  )
-                })
-
-              }
-              else {
-                logger.warn("Recipe list is empty")
-              }
-            }
-          }
-          lines += 1
-          state.put("lastLine", lines)
-          logger.info(s"Line $lines processed")
-          logger.info(s"${state.toString}")
-          if(lines % nlines == 0){
-            logger.info(s"$nlines lines processed. Sleeping...")
-            Thread.sleep(delay_nlines)
-          }
-          else{
-            logger.info("Sleeping...")
-            Thread.sleep(delay)
-          }
-          logger.info(s"Processed user ${id}")
-        })
-        CSVManager.closeCSVReader(csvReader)
+        case aae : APIAuthorizationException =>
+          logger.error(aae)
+          beforeExit
+          System.exit(1)
       }
     })
   }
-  */
+
+  def printAuthorList(authors: Set[Author], writer: CSVWriter): Unit = {
+    authors foreach { author =>
+      writer.writeRow(author.toSeq())
+    }
+  }
 
   def printUser(user: User, writer: CSVWriter) : Unit = {
     writer.writeRow(user.toSeq)
@@ -697,15 +514,15 @@ object Stage4 extends Logging{
   def printUserFollowing(users: Seq[User], related_user: User, writers: (CSVWriter, CSVWriter, CSVWriter)) : Unit = {
     users foreach { user =>
       printUser(user, writers._1)
-      writers._2.writeRow(Utils.flatten(Seq(related_user.id, user.id)))
-      writers._3.writeRow(Utils.flatten(Seq(user.profileUrl, user.id)))
+      writers._2.writeRow(Seq(related_user.id, user.id))
+      writers._3.writeRow(Seq(user.profileUrl, user.id))
     }
   }
 
   def printUserRecipesList(id: Long, recipes: Map[String, Seq[Long]], writer : CSVWriter) : Unit = {
     recipes.foreach({case(list, recipeList) => {
       recipeList foreach {recipe =>
-        writer.writeRow(Utils.flatten(Seq(list, recipe, id)))
+        writer.writeRow(Seq(list, recipe, id))
       }
     }})
   }
@@ -713,8 +530,8 @@ object Stage4 extends Logging{
   def printUserFollowers(users: Seq[User], related_user: User, writers: (CSVWriter, CSVWriter, CSVWriter)) : Unit = {
     users foreach { user =>
       printUser(user, writers._1)
-      writers._2.writeRow(Utils.flatten(Seq(user.id, related_user.id)))
-      writers._3.writeRow(Utils.flatten(Seq(user.profileUrl, user.id)))
+      writers._2.writeRow(Seq(user.id, related_user.id))
+      writers._3.writeRow(Seq(user.profileUrl, user.id))
     }
   }
 
@@ -724,22 +541,24 @@ object Stage4 extends Logging{
     })
   }
 
-  def printRecipeList(recipes: Map[String, Seq[Recipe]], writers: (CSVWriter, CSVWriter, CSVWriter, CSVWriter, CSVWriter)) : Unit = {
+  def printRecipeList(recipes: Map[String, Seq[Recipe]], writers: (CSVWriter, CSVWriter, CSVWriter, CSVWriter, CSVWriter, CSVWriter)) : Unit = {
 
     recipes.foreach({case(list, recipeList) => {
       printRecipeList(recipeList, list, writers)
-    }
-    })
+    }})
   }
 
-  def printRecipeList(recipes: Seq[Recipe], list: String, writers: (CSVWriter, CSVWriter, CSVWriter, CSVWriter, CSVWriter)) = {
+  def printRecipeList(recipes: Seq[Recipe], list: String, writers: (CSVWriter, CSVWriter, CSVWriter, CSVWriter, CSVWriter, CSVWriter)) = {
     recipes foreach {recipe =>
       writers._1.writeRow(Utils.flatten(Seq(list, recipe.toSeq())))
       recipe.ingredients.foreach(ingredient => writers._2.writeRow(Utils.flatten(Seq(recipe.id, ingredient.toSeq()))))
       recipe.steps.foreach({ case (number, text) => writers._3.writeRow(Seq(recipe.id, number, text)) })
       if (recipe.nutritionInfo.isDefined)
         writers._4.writeRow(Utils.flatten(Seq(recipe.id, recipe.nutritionInfo.get.toSeq())))
-      writers._5.writeRow(Seq(recipe.id, recipe.weburl))
+      writers._5.writeRow(Seq(recipe.id, recipe.author.id))
+      recipe.similarRecipes foreach {similar => {
+        writers._6.writeRow(Seq(recipe.id, similar))
+      }}
     }
   }
 

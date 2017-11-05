@@ -5,7 +5,7 @@ import java.util.Properties
 
 import com.github.tototoshi.csv.{CSVReader, CSVWriter}
 import es.uam.eps.tfm.fmendezlopez.exception.ScrapingDetectionException
-import es.uam.eps.tfm.fmendezlopez.scraping.Scraper
+import es.uam.eps.tfm.fmendezlopez.scraping.{Extractor, Scraper}
 import es.uam.eps.tfm.fmendezlopez.utils._
 import es.uam.eps.tfm.fmendezlopez.utils.{CSVManager, HttpManager, PropertiesManager, Utils}
 import org.apache.commons.configuration2.Configuration
@@ -185,7 +185,7 @@ object UserExtractor extends Logging{
 
   def processLineStage1(line: Seq[String], status: JSONObject, csvDelimiter : String) = {
     val threshold = properties.getInt("stage3.1.threshold.recipes")
-    val ret = Extractor.extractUser(line(1).toLong, connectionPropertiesUser, csvDelimiter)
+    val ret = Extractor.extractUser(line(1).toLong, csvDelimiter)
     if(ret.isEmpty){
       System.exit(1)
     }

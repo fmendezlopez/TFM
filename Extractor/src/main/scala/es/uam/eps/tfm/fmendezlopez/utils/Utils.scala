@@ -73,7 +73,7 @@ object Utils extends Logging{
           try{
             val try2 = Utils.extractRecipeIDFromAPIURL(apiurl)
             logger.debug(s"id extracted from api URL ${try2}")
-            try2
+            return try2
           }
           catch {
             case nfe: NumberFormatException =>
@@ -151,7 +151,7 @@ object Utils extends Logging{
   }
 
   def compoundRecipeURL(id : String, baseURL: String) : String = {
-    s"${baseURL}/${id}"
+    String.format(baseURL, id)
   }
 
   def getInputFiles(path : String) : Seq[File] = {

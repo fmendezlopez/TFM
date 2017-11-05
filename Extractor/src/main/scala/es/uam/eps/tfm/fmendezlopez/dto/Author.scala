@@ -16,4 +16,19 @@ class Author {
   def toSeq() : Seq[Any] = {
     Seq(_id, _url)
   }
+
+
+  def canEqual(other: Any): Boolean = other.isInstanceOf[Author]
+
+  override def equals(other: Any): Boolean = other match {
+    case that: Author =>
+      (that canEqual this) &&
+        _id == that._id
+    case _ => false
+  }
+
+  override def hashCode(): Int = {
+    val state = Seq(_id)
+    state.map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
+  }
 }
