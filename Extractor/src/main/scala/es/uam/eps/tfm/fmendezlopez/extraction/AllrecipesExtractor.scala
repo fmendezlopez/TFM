@@ -147,7 +147,7 @@ object AllrecipesExtractor extends Logging{
     val outCSVDelimiter = properties.getString("stage4.stage1.output.csv.delimiter")
 
     val hostname = Utils.getHostName(properties.getString("general.extraction.default.hostname"))
-    val outputDir = Utils.resolvePath(4, 1, hostname)
+    val outputDir = Utils.resolvePath("AllrecipesExtractor", 1, hostname)
 
     val csvUsersName : String = properties.getString("stage4.stage1.output.csv.users.filename")
     val csvRecipesName : String = properties.getString("stage4.stage1.output.csv.recipes.filename")
@@ -343,7 +343,7 @@ object AllrecipesExtractor extends Logging{
                 val following = potFollowing.get.filter(_.id != user.id)
                 val followers = potFollowers.get.filter(_.id != user.id)
 
-                var authors: Set[Author] = new_recipes.values.reduce((a, b) => a ++ b).flatMap(r => Seq(r.author)).toSet
+                val authors: Set[Author] = new_recipes.values.reduce((a, b) => a ++ b).flatMap(r => Seq(r.author)).toSet
 
                 printUser(user, csvUsers)
                 printReviewList(potReviews.get, (csvReviews))

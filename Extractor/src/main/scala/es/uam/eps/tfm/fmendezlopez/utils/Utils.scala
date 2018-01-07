@@ -22,6 +22,19 @@ object Utils extends Logging{
         default
     }
   }
+
+  def resolvePath(stageName : String, hostname : String): String = {
+    val prefix = s"${System.getProperty("user.dir")}${File.separator}Extractor${File.separator}output${File.separator}"
+    val suffix = s"${File.separator}${hostname}"
+    val infix = stageName
+    s"${prefix}${infix}${File.separator}${suffix}"
+  }
+  def resolvePath(stageName : String, substageNumber: Int, hostname : String): String = {
+    val prefix = s"${System.getProperty("user.dir")}${File.separator}Extractor${File.separator}output${File.separator}"
+    val suffix = s"${File.separator}${hostname}"
+    val infix = s"stage${stageName}"
+    s"${prefix}${infix}${File.separator}${substageNumber}${suffix}"
+  }
   def resolvePath(stageNumber : Int, hostname : String): String = {
     val prefix = s"${System.getProperty("user.dir")}${File.separator}Extractor${File.separator}output${File.separator}"
     val suffix = s"${File.separator}${hostname}"

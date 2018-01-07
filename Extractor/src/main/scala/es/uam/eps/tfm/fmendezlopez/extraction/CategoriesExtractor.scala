@@ -50,7 +50,7 @@ object CategoriesExtractor extends Logging{
       categoriesVisited = mutable.Set()
 
       val hostname = Utils.getHostName(properties.getString("general.extraction.default.hostname"))
-      val outputDir = Utils.resolvePath(0, hostname)
+      val outputDir = Utils.resolvePath("CategoriesExtractor", hostname)
 
       val allCategoriesURL = properties.getString("allrecipes.url.categories")
       val csvCategoriesName = s"${properties.getProperty("stage0.output.csv.categories.filename")}"
