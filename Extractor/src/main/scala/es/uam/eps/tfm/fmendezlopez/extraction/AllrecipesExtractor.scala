@@ -318,18 +318,20 @@ object AllrecipesExtractor extends Logging{
                   beforeExit
                   System.exit(1)
                 }
-                val reviews = potReviews.get
-                logger.info(s"Got ${reviews.length} reviews")
+                val priorReviews = potReviews.get
+                logger.info(s"Got ${priorReviews.length} prior reviews")
 
                 logger.info("Getting recipes from reviews...")
                 Thread.sleep(500)
-                val recipe_reviews = Extractor.extractRecipeFromReviews(user, reviews, newIDs, outCSVDelimiter)
+                val recipe_reviews = Extractor.extractRecipeFromReviews(user, priorReviews, newIDs, outCSVDelimiter)
                 val new_recipe_reviews = recipe_reviews._1
                 val repeated_recipe_reviews = recipe_reviews._2
+                logger.info(s"Got ${new_recipe_reviews.length} new recipes and ${repeated_recipe_reviews.length} repeated recipes fom reviews")
+                val allReviewsID = new_recipe_reviews.map(_.id) ++ repeated_recipe_reviews
+                val validReviews = priorReviews.filter(r => allReviewsID.contains(r.recipe.id))
+                logger.info(s"Got ${validReviews.length} valid reviews")
 
-                logger.info(s"Got ${new_recipe_reviews.length} new recipes and ${repeated_recipe_reviews.length} repeated recipes")
-
-                newIDs ++= new_recipe_reviews.flatMap(r => Seq(r.id)).toSet
+                newIDs ++= new_recipe_reviews.map(_.id).toSet
 
                 new_recipes += "review" -> new_recipe_reviews
 
@@ -346,7 +348,7 @@ object AllrecipesExtractor extends Logging{
                 val authors: Set[Author] = new_recipes.values.reduce((a, b) => a ++ b).flatMap(r => Seq(r.author)).toSet
 
                 printUser(user, csvUsers)
-                printReviewList(potReviews.get, (csvReviews))
+                printReviewList(validReviews, csvReviews)
                 printUserFollowing(following, user, (csvUsers, csvRelationshipUser, csvUsersUrls))
                 printUserFollowers(followers, user, (csvUsers, csvRelationshipUser, csvUsersUrls))
                 printAuthorList(authors, csvUsersUrls)
