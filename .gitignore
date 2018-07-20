@@ -88,5 +88,4 @@ Extractor/output/
 Extractor/project/project/
 Extractor/project/target/
 EXTRACTION_DB/
-derby.log
 log/
