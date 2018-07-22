@@ -3,6 +3,7 @@ package es.uam.eps.tfm.fmendezlopez.extraction
 import es.uam.eps.tfm.fmendezlopez.dao.DatabaseDAO
 import es.uam.eps.tfm.fmendezlopez.dto.UserDTO
 import es.uam.eps.tfm.fmendezlopez.utils.Logging
+import org.json.JSONObject
 
 import scala.collection.mutable
 import scala.util.Try
@@ -10,15 +11,29 @@ import scala.util.Try
 /**
   * Created by franm on 17/06/2018.
   */
-class Frontier(implicit override val ord: Ordering[UserDTO]) extends mutable.PriorityQueue[UserDTO] with Logging{
+class Frontier(implicit override val ord: Ordering[UserDTO])
+  extends mutable.PriorityQueue[UserDTO]
+    with Logging
+    with StateFull{
+
+  var state: JSONObject = _
 
   private var current_priority: Int = _
   private var last_priority: Int = _
 
-  def initialize(current_priority: Int, last_priority: Int): Unit = {
+  override def initialize(state: JSONObject): Unit = {
+    val current_priority = state.getInt("current_priority")
+    val last_priority = state.getInt("current_priority")
     super.enqueue(DatabaseDAO.getUsers(current_priority).map(user => UserDTO(user, current_priority)) :_*)
     this.current_priority = current_priority
     this.last_priority = last_priority
+    this.state = state
+  }
+
+  override def getState(): JSONObject = {
+    state.put("current_priority", current_priority)
+    state.put("last_priority", last_priority)
+    state
   }
 
   override def isEmpty: Boolean = {

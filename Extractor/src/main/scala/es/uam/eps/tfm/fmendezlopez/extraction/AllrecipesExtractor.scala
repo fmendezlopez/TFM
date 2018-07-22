@@ -54,47 +54,21 @@ object AllrecipesExtractor extends Logging{
         case fnfe: FileNotFoundException =>
           logger.info(fnfe)
           val json = new JSONObject()
-          json.put("seedsFile", seedsFile)
-          json.put("lastLine", 0)
-          json.put("currentPriority", 0)
-          json.put("lastPriority", 0)
+
+          val frontier = new JSONObject()
+          frontier.put("current_priority", 0)
+          frontier.put("last_priority", 0)
+          json.put("frontier", frontier)
+
+          val seeds = new JSONObject()
+          seeds.put("seedsFile", seedsFile)
+          seeds.put("lastLine", 0)
+          json.put("seeds", seeds)
+          json
         case e: Exception => logger.fatal(e);System.exit(1);null
       }
     configurationPath = configPath
     extractData(state, seedsFile, stateFileName)
-    /*
-    args(1).toInt match {
-      case 1 =>
-        val fromScratch = args(2).toBoolean
-        val inputPath = args(3)
-
-        var state : JSONObject = new JSONObject()
-        if(fromScratch){
-          state.put("currentFile", "")
-          state.put("lastLine", 0)
-          state.put("processedFiles", new JSONArray())
-        }
-        else{
-          val statusFile : String = args(4)
-          state = JSONManager.jsonFromFile(statusFile)
-        }
-        stage1(inputPath, state, fromScratch)
-
-      case 2 =>
-        val fromScratch = args(2).toBoolean
-        val inputFileName = args(3)
-
-        var state : JSONObject = new JSONObject()
-        if(fromScratch){
-          state.put("lastLine", 0)
-        }
-        else{
-          val statusFile : String = args(4)
-          state = JSONManager.jsonFromFile(statusFile)
-        }
-        stage2(inputFileName, state, fromScratch)
-    }
-    */
   }
 
   def printHelp = {
@@ -169,14 +143,15 @@ object AllrecipesExtractor extends Logging{
     class FrontierOrdering extends Ordering[UserDTO] {
       def compare(x: UserDTO, y: UserDTO): Int = y.priority compare x.priority
     }
-    var current_priority = state.getInt("currentPriority")
-    var last_priority = state.getInt("lastPriority")
+    var current_priority = state.getJSONObject("frontier").getInt("current_priority")
+    var last_priority = state.getJSONObject("frontier").getInt("last_priority")
     implicit val sorter: FrontierOrdering = new FrontierOrdering
     val frontier: Frontier = new Frontier
-    frontier.initialize(current_priority, last_priority)
+    frontier.initialize(state.getJSONObject("frontier"))
 
     //Seed provider
-    val seedProvider = new SeedProvider(state, configurationPath, properties)
+    val seedProvider = new SeedProvider(configurationPath, properties)
+    seedProvider.initialize(state.getJSONObject("seeds"))
 
     //Properties
     val csvDelimiter = properties.getString("stage4.stage1.output.csv.delimiter")
@@ -411,8 +386,8 @@ object AllrecipesExtractor extends Logging{
               }
             }
           }
-          val lastLine = seedProvider.getLastLine
-          state.put("lastLine", lastLine)
+          state.put("frontier", frontier.getState())
+          state.put("seeds", seedProvider.getState())
           JSONManager.writeJSON(state, statePath)
           logger.info("Iteration finished")
         }while (frontier.nonEmpty || seedProvider.hasMoreElements)

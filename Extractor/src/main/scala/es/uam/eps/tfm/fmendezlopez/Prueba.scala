@@ -28,15 +28,11 @@ import scala.collection.mutable
 object Prueba {
 
   def main(args: Array[String]): Unit = {
-
-    try{
-      ex(9)
-      ex(8)
-
-    } catch{
-      case nfe: NumberFormatException => println(nfe.getMessage)
-      case sde: ScrapingDetectionException => println(sde.getMessage)
-    }
+    val json = new JSONObject(Map(
+      "a" -> "1",
+      "b" -> 2
+    ))
+    println(json)
   }
 
 

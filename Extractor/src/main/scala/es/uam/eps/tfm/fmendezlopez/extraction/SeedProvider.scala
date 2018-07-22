@@ -17,16 +17,33 @@ import scala.util.Try
 /**
   * Created by franm on 24/06/2018.
   */
-class SeedProvider(state: JSONObject, configurationPath: String, properties: Configuration) extends Logging{
+class SeedProvider(configurationPath: String, properties: Configuration)
+  extends Logging
+    with StateFull{
 
-  private val seedsFile = new File(state.getString("seedsFile"))
-  private val seedsBuffer: mutable.Queue[SeedDTO] = mutable.Queue()
-  private val csvDelimiter = properties.getString("stage4.stage1.output.csv.delimiter")
-  private var lastLine: Int = state.getInt("lastLine")
+  var state: JSONObject = _
+  private var seedsFile: File = _
+  private var seedsBuffer: mutable.Queue[SeedDTO] = _
+  private var csvDelimiter: String = _
+  private var lastLine: Int = _
 
-  if(!seedsFile.exists() || !seedsFile.canRead) {
-    logger.info(s"File ${seedsFile.getName} does not exist")
-    requestSeeds()
+  override def initialize(state: JSONObject): Unit = {
+    seedsFile = new File(state.getString("seedsFile"))
+    seedsBuffer = mutable.Queue()
+    csvDelimiter = properties.getString("stage4.stage1.output.csv.delimiter")
+    lastLine = state.getInt("lastLine")
+
+    if(!seedsFile.exists() || !seedsFile.canRead) {
+      logger.info(s"File ${seedsFile.getName} does not exist")
+      requestSeeds()
+    }
+
+    this.state = state
+  }
+
+  override def getState(): JSONObject = {
+    state.put("lastLine", lastLine)
+    state
   }
 
   @throws[ScrapingDetectionException]
