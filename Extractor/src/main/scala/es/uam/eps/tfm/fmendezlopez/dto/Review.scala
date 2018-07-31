@@ -30,6 +30,6 @@ class Review {
   def recipe_= (value : Recipe) = _recipe = value
 
   def toSeq() : Seq[Any] = {
-    Seq(_recipe.id, _id, _author.id, _rating, _text, _date, _helpfulCount)
+    Seq(_id, _recipe.id, _author.id, _rating, _text, _date, _helpfulCount)
   }
 }

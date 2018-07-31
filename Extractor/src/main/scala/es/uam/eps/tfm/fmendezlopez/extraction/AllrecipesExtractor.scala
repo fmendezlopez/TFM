@@ -172,16 +172,16 @@ object AllrecipesExtractor extends Logging{
 
     try{
         do {
-          val id: Long =
-            Try(frontier.peek.id)
+          val (id, peeked): (Long, Boolean) =
+            Try((frontier.peek.id, true))
             .getOrElse{
               val seed = seedProvider.nextSeed().id.toLong
               current_priority += 1
               last_priority += 1
               Try({
                 frontier.enqueue(UserDTO(seed, current_priority))
-                frontier.peek.id
-              }).getOrElse(seed)
+                (frontier.peek.id, true)
+              }).getOrElse((seed, false))
             }
           logger.info(s"Processing user $id")
 
@@ -198,7 +198,7 @@ object AllrecipesExtractor extends Logging{
             }
           if (exists) {
             logger.info(s"User $id has already been processed")
-            current_priority = frontier.dequeue.priority
+            if(peeked) current_priority = frontier.dequeue.priority
           }
           else {
             //Get user profile
@@ -212,14 +212,10 @@ object AllrecipesExtractor extends Logging{
             val user = potUser.get
             if (!isValidUser(user, minrecipes, minreviews)) {
               logger.warn(s"User has less than ${minrecipes} recipes. Discarded.")
-
-              //Dequeue user (it was peeked)
-              if(frontier.nonEmpty)
-                current_priority = frontier.dequeue.priority
+              if(peeked) current_priority = frontier.dequeue.priority
             }
 
             else{
-              //todo añadir a los requisitos de la memoria cuándo un usuario es valido
               //Get user recipe list
               HttpManager.setProperty("referrer", user.profileUrl)
               logger.info("Getting user recipes...")
@@ -313,10 +309,7 @@ object AllrecipesExtractor extends Logging{
                 logger.info(s"Extracted ${total_recipes} recipes in total")
                 logger.info(s"Extracted ${total_users} users in total")
 
-                //Dequeue user (it was peeked)
-                if(frontier.nonEmpty) {
-                  current_priority = frontier.dequeue.priority
-                }
+                if(peeked) current_priority = frontier.dequeue.priority
 
                 //Enqueue followers and followees
                 last_priority += 1

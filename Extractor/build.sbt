@@ -13,9 +13,9 @@ libraryDependencies ++= Seq(
   "org.apache.logging.log4j" %% "log4j-api-scala" % "2.8.1",
   */
   "log4j" % "log4j" % "1.2.17",
-  "net.ruippeixotog" %% "scala-scraper" % "1.2.0",
+  //"net.ruippeixotog" %% "scala-scraper" % "1.2.0",
   "org.jsoup"                   % "jsoup"                % "1.10.1",
-  "org.json4s" %% "json4s-native" % "3.5.1",
+  //"org.json4s" %% "json4s-native" % "3.5.1",
   "org.json" % "json" % "20160810",
   "org.apache.commons" % "commons-configuration2" % "2.0",
   "commons-beanutils" % "commons-beanutils" % "1.9.3",
