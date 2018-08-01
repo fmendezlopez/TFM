@@ -159,14 +159,14 @@ object AllrecipesExtractor extends Logging{
     val nlines = properties.getLong("stage4.stage1.scraping.nlines")
     val delay_nlines = properties.getLong("stage4.stage1.scraping.delay.nlines")
 
-    //val max_userreviews = properties.getInt("stage4.stage1.scraping.max.user.reviews")
-    val max_userreviews = 1
-    //val max_userfollowing = properties.getInt("stage4.stage1.scraping.max.user.following")
-    //val max_userfollower = properties.getInt("stage4.stage1.scraping.max.user.follower")
-    val max_userfollowing = 1
-    val max_userfollower = 1
-    //val maxrecipes = properties.getInt("stage4.stage1.scraping.max_recipes_user")
-    val maxrecipes = 1
+    val max_userreviews = properties.getInt("stage4.stage1.scraping.max.user.reviews")
+    //val max_userreviews = 1
+    val max_userfollowing = properties.getInt("stage4.stage1.scraping.max.user.following")
+    val max_userfollower = properties.getInt("stage4.stage1.scraping.max.user.follower")
+    //val max_userfollowing = 1
+    //val max_userfollower = 1
+    val maxrecipes = properties.getInt("stage4.stage1.scraping.max_recipes_user")
+    //val maxrecipes = 1
     val minrecipes = properties.getInt("stage4.stage1.scraping.minrecipes")
     val minreviews = properties.getInt("stage4.stage1.scraping.minreviews")
 
