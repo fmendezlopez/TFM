@@ -603,7 +603,7 @@ object HttpManager extends Logging{
     val url = String.format(apiURLs("recipe_reviews"), id.toString, pagesize.toString, pageNumber.toString)
     val connection = Jsoup.connect(url)
 
-    connection.userAgent(connectionProperties.getProperty("user-agent"))
+    connection.userAgent(selectUserAgent)
     connection.timeout(connectionProperties.getProperty("timeout").toInt)
     connection.maxBodySize(connectionProperties.getProperty("max-body-size").toInt)
     connection.followRedirects(connectionProperties.getProperty("follow-redirects").toBoolean)

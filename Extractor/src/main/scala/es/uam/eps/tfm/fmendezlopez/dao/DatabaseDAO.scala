@@ -306,7 +306,7 @@ object DatabaseDAO{
     val query =
       s"""
          |SELECT COUNT(*) as number
-         |FROM ${DatabaseDAO.RECIPES_TABLENAME}
+         |FROM ${DatabaseDAO.REVIEWS_TABLENAME}
          |WHERE id = $id
        """.stripMargin
     val stmt = conn.createStatement
@@ -319,11 +319,27 @@ object DatabaseDAO{
   }
 
   @throws[SQLException]
-  def countUsers: Int = {
+  def countExtractedUsers: Int = {
     val query =
       s"""
          |SELECT COUNT(*) as number FROM ${DatabaseDAO.USERS_TABLENAME}
          |WHERE queue = 0
+      """.stripMargin
+    val stmt = conn.createStatement
+    val result = stmt.executeQuery(query)
+    result.next
+    val number = result.getInt(1)
+    result.close()
+    stmt.close()
+    number
+  }
+
+  @throws[SQLException]
+  def countQueuedUsers: Int = {
+    val query =
+      s"""
+         |SELECT COUNT(*) as number FROM ${DatabaseDAO.USERS_TABLENAME}
+         |WHERE queue = 1
       """.stripMargin
     val stmt = conn.createStatement
     val result = stmt.executeQuery(query)

@@ -22,7 +22,8 @@ libraryDependencies ++= Seq(
   "org.postgresql" % "postgresql" % "42.0.0.jre7",
   "com.github.tototoshi" %% "scala-csv" % "1.3.4",
   "org.apache.commons" % "commons-text" % "1.1",
-  "org.apache.derby" % "derby" % "10.13.1.1"
+  "org.apache.derby" % "derby" % "10.13.1.1",
+  "org.postgresql" % "postgresql" % "42.2.4"
 )
 
 assemblySettings

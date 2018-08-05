@@ -52,7 +52,7 @@ object CSVManager {
     CSVReader.open(br)
   }
 
-  def skipLines(csvReader: CSVReader, lines : Int, predicate : Option[Seq[String]] => Boolean) : Unit = {
+  def skipLines(csvReader: CSVReader, lines : Int, predicate : Option[Seq[String]] => Boolean = (_) => true) : Unit = {
     var i = 0
     var continue = true
     while(i < lines && continue){

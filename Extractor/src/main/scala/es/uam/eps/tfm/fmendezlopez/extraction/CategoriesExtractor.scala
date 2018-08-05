@@ -53,9 +53,9 @@ object CategoriesExtractor extends Logging{
       val outputDir = Utils.resolvePath("CategoriesExtractor", hostname)
 
       val allCategoriesURL = properties.getString("allrecipes.url.categories")
-      val csvCategoriesName = s"${properties.getProperty("stage0.output.csv.categories.filename")}"
-      val csvCategoriesRelName = s"${properties.getProperty("stage0.output.csv.categories.relationship.filename")}"
-      val delimiter:Char = properties.getProperty("stage0.output.csv.delimiter").toString.charAt(0)
+      val csvCategoriesName = s"${properties.getProperty("stage4.stage1.dataset.categories.filename")}"
+      val csvCategoriesRelName = s"${properties.getProperty("stage4.stage1.dataset.category_hierarchy.filename")}"
+      val delimiter:Char = properties.getProperty("stage4.stage1.output.csv.delimiter").toString.charAt(0)
 
       connectionProperties = new Properties()
       connectionProperties.put("timeout", properties.getProperty("stage0.scraping.timeout"))
@@ -80,8 +80,8 @@ object CategoriesExtractor extends Logging{
 
       csvCategories = CSVManager.openCSVWriter(outputDir, csvCategoriesName, delimiter)
       csvCategoriesRel = CSVManager.openCSVWriter(outputDir, csvCategoriesRelName, delimiter)
-      csvCategories.writeRow(Seq("ID", "NAME", "URL", "COUNT"))
-      csvCategoriesRel.writeRow(Seq("ID_PARENT", "ID_CHILD"))
+      csvCategories.writeRow(properties.getString("stage4.stage1.dataset.categories.header"))
+      csvCategoriesRel.writeRow(properties.getString("stage4.stage1.dataset.category_hierarchy.header"))
 
       val start = System.currentTimeMillis()
       //todo capturar excepciones de extractCategories

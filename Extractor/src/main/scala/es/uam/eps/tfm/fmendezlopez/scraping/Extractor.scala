@@ -54,7 +54,7 @@ object Extractor extends Logging{
   @throws[APIAuthorizationException]
   def extractRecipe(author_id: Long, webURL: String, apiURL: String, csvDelimiter: String): Option[Recipe] ={
 
-    try{
+      try{
       logger.debug(s"Extracting recipe with webURL ${webURL} and apiURL ${apiURL}")
       val html_str = if(webURL.isEmpty) None else HttpManager.requestRecipeWebURL(webURL)
       if(html_str.isEmpty){
@@ -296,7 +296,7 @@ object Extractor extends Logging{
               exists = DatabaseDAO.existsRecipe(id)
 
               if(exists || repeated_recipes.contains(id) || scraped.contains(id)){
-                logger.debug(s"Recipe with id ${id} has already been scraped")
+                logger.info(s"Recipe with id ${id} has already been scraped")
                 if(!repeated_recipes.contains(id))
                   repeated_recipes += id
                 recipes += 1
@@ -509,18 +509,24 @@ object Extractor extends Logging{
   @throws[ScrapingDetectionException]
   @throws[SQLException]
   @throws[APIAuthorizationException]
-  def extractRecipesReviews(recipes: Seq[Recipe], reviews_per_recipe: Int, csvDelimiter: String): Map[Long, Seq[Review]] = {
+  def extractRecipesReviews(recipes: Set[Long],
+                            reviews_per_recipe: Int,
+                            min_text_length: Int,
+                            csvDelimiter: String)
+  : Map[Long, Seq[Review]] =
+  {
     val pageSize = HttpManager.getProperty("max-pagesize").toInt
     val npages = math.ceil(reviews_per_recipe.toDouble / pageSize).toInt
     recipes.flatMap(recipe => {
       val seq: Seq[Review] = (1 to npages).flatMap(pageNumber => {
-        val potReviews = HttpManager.requestRecipeReviewsAPI(recipe.id, pagesize = pageSize, pageNumber = pageNumber)
+        val potReviews = HttpManager.requestRecipeReviewsAPI(recipe, pagesize = pageSize, pageNumber = pageNumber)
         val json = potReviews.getOrElse("""{"reviews": []}""")
         Scraper
-          .scrapeReviewsList(None, json, csvDelimiter, reviews_per_recipe)
+          .scrapeRecipesReviewsList(recipe, json, csvDelimiter, reviews_per_recipe)
           .filterNot(review => DatabaseDAO.existsReview(review.id))
+          .filter(_.text.length >= min_text_length)
       })
-      Map(recipe.id -> seq)
+      Map(recipe -> seq)
     }) toMap
   }
 

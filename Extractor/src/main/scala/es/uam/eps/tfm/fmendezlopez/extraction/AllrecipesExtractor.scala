@@ -6,7 +6,7 @@ import java.sql.SQLException
 import java.util.Properties
 
 import com.github.tototoshi.csv.{CSVReader, CSVWriter}
-import es.uam.eps.tfm.fmendezlopez.dao.{DatabaseDAO, DatasetDAO}
+import es.uam.eps.tfm.fmendezlopez.dao.{DatabaseDAO, DatasetCSVDAO}
 import es.uam.eps.tfm.fmendezlopez.dto._
 import es.uam.eps.tfm.fmendezlopez.exception.{APIAuthorizationException, APILoginException, ScrapingDetectionException}
 import es.uam.eps.tfm.fmendezlopez.scraping.Extractor.logger
@@ -64,6 +64,7 @@ object AllrecipesExtractor extends Logging{
           seeds.put("seedsFile", seedsFile)
           seeds.put("lastLine", 0)
           json.put("seeds", seeds)
+          json.put("duration", 0.0f)
           json
         case e: Exception => logger.fatal(e);System.exit(1);null
       }
@@ -80,12 +81,14 @@ object AllrecipesExtractor extends Logging{
   def extractData(state: JSONObject, seedsPath: String, statePath: String): Unit = {
 
     //Database access
-    var total_users = 0
+    var extracted_users = 0
+    var queued_users = 0
     var total_recipes = 0
     var total_reviews = 0
     Try {
       DatabaseDAO.connect()
-      total_users = DatabaseDAO.countUsers
+      extracted_users = DatabaseDAO.countExtractedUsers
+      queued_users = DatabaseDAO.countQueuedUsers
       total_recipes = DatabaseDAO.countRecipes
       total_reviews = DatabaseDAO.countReviews
     } match {
@@ -103,10 +106,10 @@ object AllrecipesExtractor extends Logging{
       case _ =>
     }
 
-    logger.info(s"Starting with: \t$total_users users \t$total_recipes recipes \t$total_reviews reviews")
+    logger.info(s"Starting with: \t$extracted_users users \t$total_recipes recipes \t$total_reviews reviews")
 
     //Dataset access
-    val datasetDAO = DatasetDAO
+    val datasetDAO = DatasetCSVDAO
     datasetDAO.initialize(properties)
 
     //connection settings
@@ -169,7 +172,10 @@ object AllrecipesExtractor extends Logging{
     //val maxrecipes = 1
     val minrecipes = properties.getInt("stage4.stage1.scraping.minrecipes")
     val minreviews = properties.getInt("stage4.stage1.scraping.minreviews")
-
+    val max_reviews_per_recipe = properties.getInt("stage4.stage1.scraping.maxreviewsperrecipe")
+    val min_review_text_length = properties.getInt("stage4.stage1.scraping.minreviewtextlength")
+//todo texto asociado no vacio en el requisito de extracción de revisiones por receta
+    val start = System.currentTimeMillis()
     try{
         do {
           val (id, peeked): (Long, Boolean) =
@@ -227,14 +233,16 @@ object AllrecipesExtractor extends Logging{
               }
 
               val user_recipes = potUserRecipes.get
-              var new_recipes: Map[String, Seq[Recipe]] = user_recipes._1
+              val new_recipes: Map[String, Seq[Recipe]] = user_recipes._1
               val rep_recipes: Map[String, Seq[Long]] = user_recipes._2
               val publications = user_recipes._1("recipes").map(_.id)
+              val favourites = new_recipes("fav").map(_.id) ++ rep_recipes("fav")
+              val madeit = new_recipes("madeit").map(_.id) ++ rep_recipes("madeit")
 
-              var newIDs: Set[Long] = new_recipes.values.reduce((a, b) => a ++ b).flatMap(r => Seq(r.id)).toSet
+              val newIDs: Set[Long] = new_recipes.values.reduce(_ ++ _).flatMap(r => Seq(r.id)).toSet
               val new_recipes_number = newIDs.size
-              val rep_recipes_number = rep_recipes.values.size
-              logger.info(s"Got ${newIDs.size} new recipes and ${rep_recipes_number} repeated recipes")
+              val rep_recipes_number = rep_recipes.values.reduce(_ ++ _).size
+              logger.info(s"Got ${newIDs.size} new recipes and $rep_recipes_number repeated recipes")
 
               val len = new_recipes_number + rep_recipes_number
 
@@ -246,26 +254,15 @@ object AllrecipesExtractor extends Logging{
                   beforeExit(state)
                   System.exit(1)
                 }
-                val reviews = potReviews.get
-                logger.info(s"Got ${reviews.length} reviews")
+                val user_reviews = potReviews.get.toSet
+                logger.info(s"Got ${user_reviews.size} user reviews")
                 logger.info("Getting recipes from reviews...")
                 Thread.sleep(500)
 
-                val recipe_reviews = Extractor.extractRecipeFromReviews(user, reviews, newIDs, csvDelimiter)
-                val new_recipe_reviews = recipe_reviews._1
-                val repeated_recipe_reviews = recipe_reviews._2
-                logger.info(s"Got ${new_recipe_reviews.length} new recipes and ${repeated_recipe_reviews.length} repeated recipes from reviews")
-
-                newIDs ++= new_recipe_reviews.map(_.id).toSet
-
-                new_recipes += "review" -> new_recipe_reviews
-
-                val allrecipes: Map[String, Seq[Long]] = Map(
-                  "fav" -> (new_recipes("fav").map(_.id) ++ rep_recipes("fav")),
-                  "madeit" -> (new_recipes("madeit").map(_.id) ++ rep_recipes("madeit")),
-                  "review" -> (new_recipe_reviews.map(_.id) ++ repeated_recipe_reviews)
-                )
-
+                val recipes_reviews_map = Extractor.extractRecipesReviews(newIDs, max_reviews_per_recipe, min_review_text_length, csvDelimiter)
+                val recipes_reviews: Set[Review] = recipes_reviews_map.values.reduce(_ ++ _).toSet
+                val reviews: Set[Review] = recipes_reviews ++ user_reviews
+                logger.info(s"Got ${recipes_reviews.size} recipes reviews")
                 Thread.sleep(500)
 
                 logger.info("Getting user following...")
@@ -275,7 +272,7 @@ object AllrecipesExtractor extends Logging{
                   beforeExit(state)
                   System.exit(1)
                 }
-
+                Thread.sleep(500)
                 logger.info("Getting user followers...")
                 val potFollowers = Extractor.extractFollowers(id, csvDelimiter, max_userfollower)
                 if (potFollowers.isEmpty) {
@@ -295,36 +292,38 @@ object AllrecipesExtractor extends Logging{
                 datasetDAO.addRecipes(new_recipes.values.flatten.toSeq)
                 datasetDAO.addPublications(user.id, publications)
                 datasetDAO.addUser(user)
-                datasetDAO.addFavourites(user.id, allrecipes("fav"))
-                datasetDAO.addMadeIt(user.id, allrecipes("madeit"))
-                datasetDAO.addReviews(reviews)
+                datasetDAO.addFavourites(user.id, favourites)
+                datasetDAO.addMadeIt(user.id, madeit)
+                datasetDAO.addReviews(reviews.toSeq)
                 datasetDAO.addFollowers(user, followers.map(_.id))
                 datasetDAO.addFollowing(user, following.map(_.id))
 
-                total_reviews += potReviews.get.length
-                total_users += 1
-                total_recipes += new_recipes_number + new_recipe_reviews.length
-
-                logger.info(s"Extracted ${total_reviews} reviews in total")
-                logger.info(s"Extracted ${total_recipes} recipes in total")
-                logger.info(s"Extracted ${total_users} users in total")
+                total_reviews += reviews.size
+                extracted_users += 1
+                total_recipes += new_recipes_number
 
                 if(peeked) current_priority = frontier.dequeue.priority
 
                 //Enqueue followers and followees
                 last_priority += 1
-                val users: Set[Long] = (followers.map(_.id).toSet ++ following.map(_.id).toSet).filterNot(DatabaseDAO.existsUser(_))
+                val users: Set[Long] = (followers.map(_.id).toSet ++ following.map(_.id).toSet).filterNot(DatabaseDAO.existsUser)
                 try {
                   //DatabaseDAO.printUsers
                   //frontier.enqueue(followers.map(user => UserDTO(user.id, priority)): _*)
                   //frontier.enqueue(following.map(user => UserDTO(user.id, priority)): _*)
                   frontier.enqueue(users.map(user => UserDTO(user, last_priority)).toSeq: _*)
+                  queued_users = DatabaseDAO.countQueuedUsers
                 } catch {
                   case sql: SQLException =>
                     logger.fatal(sql.getMessage)
                     beforeExit(state)
                     System.exit(1)
                 }
+
+                logger.info(s"Extracted $total_reviews reviews in total")
+                logger.info(s"Extracted $total_recipes recipes in total")
+                logger.info(s"Extracted $extracted_users users in total")
+                logger.info(s"Queued users: $queued_users")
 
                 logger.info("Writing into database...")
                 //insert recipes into DB
@@ -361,10 +360,11 @@ object AllrecipesExtractor extends Logging{
                   }
                 }
 
+                state.put("duration", (System.currentTimeMillis() - start) / 60000)
                 state.put("currentPriority", current_priority)
                 state.put("lastPriority", last_priority)
                 logger.info(s"${state.toString}")
-                if (total_users % nlines == 0) {
+                if (extracted_users % nlines == 0) {
                   logger.info(s"$nlines users processed. Sleeping...")
                   Thread.sleep(delay_nlines)
                 }

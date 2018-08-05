@@ -11,7 +11,7 @@ import org.apache.commons.configuration2.Configuration
 /**
   * Created by franm on 10/06/2018.
   */
-object DatasetDAO {
+object DatasetCSVDAO {
 
   private var writers: Map[String, CSVWriter] = _
 

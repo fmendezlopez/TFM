@@ -19,6 +19,7 @@ import net.ruippeixotog.scalascraper.browser.JsoupBrowser
 import net.ruippeixotog.scalascraper.model.{Element, TextNode}
 import net.ruippeixotog.scalascraper.dsl.DSL._
 import net.ruippeixotog.scalascraper.scraper.ContentExtractors._
+import org.apache.commons.lang3.StringEscapeUtils
 
 import scala.collection.mutable
 
@@ -28,11 +29,8 @@ import scala.collection.mutable
 object Prueba {
 
   def main(args: Array[String]): Unit = {
-    val json = new JSONObject(Map(
-      "a" -> "1",
-      "b" -> 2
-    ))
-    println(json)
+    val a = "srer'fds"
+    println(a.replace("'", "\\'"))
   }
 
 
