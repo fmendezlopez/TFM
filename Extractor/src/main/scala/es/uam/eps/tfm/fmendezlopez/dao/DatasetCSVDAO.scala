@@ -61,7 +61,7 @@ object DatasetCSVDAO {
       recipe.steps.foreach({ case (number, text) => writers("steps").writeRow(Seq(recipe.id, number, text)) })
       if (recipe.nutritionInfo.isDefined)
         writers("nutrition").writeRow(Utils.flatten(Seq(recipe.id, recipe.nutritionInfo.get.toSeq())))
-      writers("similar").writeAll(recipes.map(similar => Seq(similar.id, recipe.id)))
+      writers("similar").writeAll(recipes.map(similar => Seq(recipe.id, similar.id)))
     }
   }
 

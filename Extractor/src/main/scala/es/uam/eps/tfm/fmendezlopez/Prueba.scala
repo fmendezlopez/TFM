@@ -29,8 +29,8 @@ import scala.collection.mutable
 object Prueba {
 
   def main(args: Array[String]): Unit = {
-    val a = "srer'fds"
-    println(a.replace("'", "\\'"))
+    val a = Seq.fill(3)(3)
+    a.toSet.foreach(println)
   }
 
 

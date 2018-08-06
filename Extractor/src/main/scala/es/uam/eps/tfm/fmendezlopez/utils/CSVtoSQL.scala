@@ -66,11 +66,12 @@ object CSVtoSQL {
     readers("recipes").all()
       .foreach(line => dataset.insertData(tables("recipes"), line, properties.getString("stage4.stage1.database.recipes.stringfields").split(',').map(_.toInt)))
 
-    //todo falla aqui
     readers("users").all()
       .foreach(line => dataset.insertData(tables("users"), line, properties.getString("stage4.stage1.database.users.stringfields").split(',').map(_.toInt)))
     readers("favourites").all()
-      .foreach(line => dataset.insertData(tables("favourites"), line))
+      .foreach(line =>
+        dataset.insertData(tables("favourites"), line)
+      )
     readers("madeit").all()
       .foreach(line => dataset.insertData(tables("madeit"), line))
     readers("publications").all()
@@ -83,12 +84,12 @@ object CSVtoSQL {
       .foreach(line => dataset.insertData(tables("similar"), line))
     readers("nutrition").all()
       .foreach(line => dataset.insertData(tables("nutrition"), line))
+
     readers("ingredients").all()
       .foreach(line => dataset.insertData(tables("ingredients"), line, properties.getString("stage4.stage1.database.ingredients.stringfields").split(',').map(_.toInt)))
-    readers("fellowship").all(
-
-    ).foreach(line => dataset.insertData(tables("fellowship"), line))
-
+    readers("fellowship").all()
+      .foreach(line => dataset.insertData(tables("fellowship"), line))
+//todo actualizar la eliminación de las dos constraints: fk de fellowship y pk de ingredientes
     readers.foreach(_._2.close())
     dataset.disconnect()
   }

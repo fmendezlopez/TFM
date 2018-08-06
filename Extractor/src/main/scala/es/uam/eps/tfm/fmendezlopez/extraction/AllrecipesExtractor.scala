@@ -175,6 +175,7 @@ object AllrecipesExtractor extends Logging{
     val max_reviews_per_recipe = properties.getInt("stage4.stage1.scraping.maxreviewsperrecipe")
     val min_review_text_length = properties.getInt("stage4.stage1.scraping.minreviewtextlength")
 //todo texto asociado no vacio en el requisito de extracción de revisiones por receta
+    val duration = state.getDouble("duration")
     val start = System.currentTimeMillis()
     try{
         do {
@@ -281,11 +282,19 @@ object AllrecipesExtractor extends Logging{
                   System.exit(1)
                 }
 
-                val following = potFollowing.get.filter(_.id != user.id)
-                logger.info(s"Got ${following.length} following")
+                val filterUsers: Seq[User] => Set[User] = seq => {
+                  val seq1 = seq.filter(_.id != user.id)
+                  val seq2 = seq1.zip(Seq.fill(seq1.length)(user.id)).toSet
+                  val seq3 = seq2.map(_._1)
+                  seq3
+                }
 
-                val followers = potFollowers.get.filter(_.id != user.id)
-                logger.info(s"Got ${followers.length} followers")
+                val following = filterUsers(potFollowing.get)
+
+                logger.info(s"Got ${following.size} following")
+
+                val followers = filterUsers(potFollowers.get)
+                logger.info(s"Got ${followers.size} followers")
 
                 //Dataset writing
                 logger.info("Writing into dataset...")
@@ -295,8 +304,8 @@ object AllrecipesExtractor extends Logging{
                 datasetDAO.addFavourites(user.id, favourites)
                 datasetDAO.addMadeIt(user.id, madeit)
                 datasetDAO.addReviews(reviews.toSeq)
-                datasetDAO.addFollowers(user, followers.map(_.id))
-                datasetDAO.addFollowing(user, following.map(_.id))
+                datasetDAO.addFollowers(user, followers.map(_.id).toSeq)
+                datasetDAO.addFollowing(user, following.map(_.id).toSeq)
 
                 total_reviews += reviews.size
                 extracted_users += 1
@@ -360,7 +369,7 @@ object AllrecipesExtractor extends Logging{
                   }
                 }
 
-                state.put("duration", (System.currentTimeMillis() - start) / 60000)
+                state.put("duration", duration + (System.currentTimeMillis() - start) / 60000)
                 state.put("currentPriority", current_priority)
                 state.put("lastPriority", last_priority)
                 logger.info(s"${state.toString}")
@@ -379,10 +388,12 @@ object AllrecipesExtractor extends Logging{
               }
             }
           }
+          //todo añadir al requisito que del total de N recetas del historial, se intentan llenar primero con publicaciones y luego con madeit y favoritos
           state.put("frontier", frontier.getState())
           state.put("seeds", seedProvider.getState())
           JSONManager.writeJSON(state, statePath)
           logger.info("Iteration finished")
+          logger.info(s"Current duration: $duration")
         }while (frontier.nonEmpty || seedProvider.hasMoreElements)
     } catch{
       case e@(_: ScrapingDetectionException | _: APIAuthorizationException) =>

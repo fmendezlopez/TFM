@@ -38,23 +38,28 @@ object DatasetSQLDAO {
 
   @throws[SQLException]
   def insertData(tableName: String, data: Seq[String], string_fields: Seq[Int] = Seq()): Unit = {
-    val query =
-      s"""
-        |INSERT INTO "$tableName"
-        |VALUES (${
-        data
-        .zipWithIndex
-          .map({case(column, index) =>
-            if(column == "1659")
-              println("STOP")
-            if(string_fields.contains(index))
-              s"""'${column.replace("'", "")}'"""
-            else
-              column})
-          .mkString(",")})
-      """.stripMargin
-    val stmt = conn.createStatement
-    stmt.execute(query)
-    stmt.close()
+
+      val query =
+        s"""
+          |INSERT INTO "$tableName"
+          |VALUES (${
+          data
+          .zipWithIndex
+            .map({case(column, index) =>
+              if(string_fields.contains(index))
+                s"""'${column.replace("'", "")}'"""
+              else
+                column})
+            .mkString(",")})
+        """.stripMargin
+      val stmt = conn.createStatement
+      try{
+        stmt.execute(query)
+        stmt.close()
+      } catch {
+        case e: SQLException =>
+          println(e.getMessage)
+      }
+
   }
 }

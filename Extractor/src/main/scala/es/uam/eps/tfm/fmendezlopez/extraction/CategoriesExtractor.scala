@@ -95,8 +95,9 @@ object CategoriesExtractor extends Logging{
     }
   }
 
-  def printHelp : Unit = {
-    println("Wrong parameters: try CategoriesExtractor <configuration_path>")
+  def printHelp = {
+    println("Usage:")
+    println("\targ1: configuration path")
   }
 
   def processGroups(groups:JSONArray, id:Int, hierarchy:String, currDepth:Int, idParent:Int, cat_url : String) : Unit = {
