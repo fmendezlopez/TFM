@@ -174,7 +174,6 @@ object AllrecipesExtractor extends Logging{
     val minreviews = properties.getInt("stage4.stage1.scraping.minreviews")
     val max_reviews_per_recipe = properties.getInt("stage4.stage1.scraping.maxreviewsperrecipe")
     val min_review_text_length = properties.getInt("stage4.stage1.scraping.minreviewtextlength")
-//todo texto asociado no vacio en el requisito de extracción de revisiones por receta
     val duration = state.getDouble("duration")
     val start = System.currentTimeMillis()
     try{
@@ -388,12 +387,11 @@ object AllrecipesExtractor extends Logging{
               }
             }
           }
-          //todo añadir al requisito que del total de N recetas del historial, se intentan llenar primero con publicaciones y luego con madeit y favoritos
           state.put("frontier", frontier.getState())
           state.put("seeds", seedProvider.getState())
           JSONManager.writeJSON(state, statePath)
           logger.info("Iteration finished")
-          logger.info(s"Current duration: $duration")
+          logger.info(s"Current duration: ${state.getDouble("duration")}")
         }while (frontier.nonEmpty || seedProvider.hasMoreElements)
     } catch{
       case e@(_: ScrapingDetectionException | _: APIAuthorizationException) =>

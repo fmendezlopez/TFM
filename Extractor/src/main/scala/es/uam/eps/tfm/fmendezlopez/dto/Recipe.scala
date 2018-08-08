@@ -76,7 +76,7 @@ class Recipe {
   def similarRecipes_=(value: Seq[Long]) : Unit = _similarRecipes = value
 
   def toSeq() : Seq[Any] = {
-    var result : Seq[Any] = Seq(_id, category.id, _title, _rating, _ratingCount, _reviewCount, _madeit, _description, _servings, _prepTime, _cookTime, _totalTime, _weburl, _apiurl)
+    var result : Seq[Any] = Seq(_id, category.id, _title, _rating, _ratingCount, _reviewCount, _madeit, _description, _servings, _prepTime, _cookTime, _totalTime, _weburl)
     result ++ notes
   }
 

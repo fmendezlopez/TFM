@@ -32,4 +32,11 @@ class Review {
   def toSeq() : Seq[Any] = {
     Seq(_id, _recipe.id, _author.id, _rating, _text, _date, _helpfulCount)
   }
+
+  def canEqual(a: Any) = a.isInstanceOf[Review]
+  override def equals(that: Any): Boolean =
+    that match {
+      case that: Review => that.canEqual(this) && this.id == that.id
+      case _ => false
+    }
 }

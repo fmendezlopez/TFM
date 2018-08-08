@@ -84,12 +84,10 @@ object CSVtoSQL {
       .foreach(line => dataset.insertData(tables("similar"), line))
     readers("nutrition").all()
       .foreach(line => dataset.insertData(tables("nutrition"), line))
-
     readers("ingredients").all()
       .foreach(line => dataset.insertData(tables("ingredients"), line, properties.getString("stage4.stage1.database.ingredients.stringfields").split(',').map(_.toInt)))
     readers("fellowship").all()
       .foreach(line => dataset.insertData(tables("fellowship"), line))
-//todo actualizar la eliminación de las dos constraints: fk de fellowship y pk de ingredientes
     readers.foreach(_._2.close())
     dataset.disconnect()
   }

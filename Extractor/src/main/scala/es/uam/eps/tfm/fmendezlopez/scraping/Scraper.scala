@@ -268,12 +268,12 @@ object Scraper extends Logging{
       val unit = json.optString("unit", "")
       val percent = json.optDouble("percentDailyValue", 0.0)
       result.name_=(name.replace(csvSeparator, " "))
-      result.amount_=(resolveAmount(key, amount, nutritionMapping(key)))
       result.unit_=(unit.replace(csvSeparator, " "))
+      result.amount_=(normalizeAmount(key, amount, result.unit))
       result.percent_=(percent)
       result
     }
-    def resolveAmount(nutrient : String, amount : Double, currentUnit : String) : Double = {
+    def normalizeAmount(nutrient : String, amount : Double, currentUnit : String) : Double = {
       val expectedUnit = nutritionMapping(nutrient)
       if(expectedUnit.equals(currentUnit))
         return amount
@@ -322,11 +322,10 @@ object Scraper extends Logging{
       return ret
     }
     val result : NutritionInfo = new NutritionInfo
-    var map : Map[String, Nutrient] = Map()
-    nutritionKeys.foreach(nutrient => {
-      if(json.has(nutrient) && !json.isNull(nutrient)) map += (nutrient -> getNutrient(json.getJSONObject(nutrient), nutrient))
-      else map += (nutrient -> Nutrient.defaultNutrient(nutrient))
-    })
+    val map : Map[String, Nutrient] = nutritionKeys.flatMap(nutrient => {
+      if(json.has(nutrient) && !json.isNull(nutrient)) Map(nutrient -> getNutrient(json.getJSONObject(nutrient), nutrient))
+      else Map(nutrient -> Nutrient.defaultNutrient(nutrient))
+    }).toMap
     result.nutrients_=(map)
     result
   }

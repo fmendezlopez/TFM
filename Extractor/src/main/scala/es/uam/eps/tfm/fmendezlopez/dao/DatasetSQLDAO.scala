@@ -16,7 +16,6 @@ object DatasetSQLDAO {
   private var conn: Connection = _
 
   //todo organizar properties versionandolo antes
-  //todo acabar esta utilidad
   def initialize(properties: Configuration) = this.properties = properties
 
   @throws[InstantiationException]
