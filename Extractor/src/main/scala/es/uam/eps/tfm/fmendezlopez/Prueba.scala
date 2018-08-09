@@ -29,8 +29,35 @@ import scala.collection.mutable
 object Prueba {
 
   def main(args: Array[String]): Unit = {
-    val a = Seq.fill(3)(3)
-    a.toSet.foreach(println)
+
+    val db = DatabaseDAO
+    try {
+      db.connect
+      val conn = db.getConnection
+      val query =
+        s"""
+           |SELECT * FROM VISITED_USERS
+       """.stripMargin
+      val stmt = conn.createStatement
+      val result = stmt.executeQuery(query)
+      result.next
+      while(result.next()){
+        val id = result.getLong(1)
+        val queued = result.getInt(2)
+        val priority = result.getInt(3)
+        println(s"$id $queued $priority")
+      }
+      result.close()
+      stmt.close()
+      conn.close()
+      db.disconnectAndDrop()
+    } catch{
+      case sql: SQLException => {
+        println(sql)
+        println(sql.getStackTrace)
+        println(sql.getMessage)
+      }
+    }
   }
 
 

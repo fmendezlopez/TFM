@@ -1,6 +1,6 @@
 package es.uam.eps.tfm.fmendezlopez.dao
 
-import es.uam.eps.tfm.fmendezlopez.dto.UserRecipe
+import es.uam.eps.tfm.fmendezlopez.dto.{Recipe, Review, User, UserRecipe}
 import org.apache.commons.io.FileUtils
 import java.io.File
 import java.io.IOException
@@ -33,9 +33,12 @@ object DatabaseDAO{
   @throws[IllegalAccessException]
   @throws[ClassNotFoundException]
   @throws[SQLException]
-  def connectAndCreate(): Unit = {
+  def createAndConnect(): Unit = {
     Class.forName(DatabaseDAO.CLASSNAME).newInstance
     conn = DriverManager.getConnection(DatabaseDAO.DBURL_CREATE)
+    createUsersTable()
+    createRecipesTable()
+    createReviewsTable()
   }
 
   @throws[InstantiationException]
@@ -104,18 +107,71 @@ object DatabaseDAO{
   }
 
   @throws[SQLException]
-  def configure(): Unit = {
-    createUsersTable()
-    createRecipesTable()
-    createReviewsTable()
-  }
-
-  @throws[SQLException]
   def insertUser(id: Long, queue: Boolean, priority: Int = -1): Unit = {
     val query =
       s"""
          |INSERT INTO ${DatabaseDAO.USERS_TABLENAME}
          |VALUES ($id, ${if(queue) 1 else 0}, $priority)
+      """.stripMargin
+    val stmt = conn.createStatement
+    stmt.execute(query)
+    stmt.close()
+  }
+
+  @throws[SQLException]
+  def insertRecipe(id: Long): Unit = {
+    val query =
+      s"""
+         |INSERT INTO ${DatabaseDAO.RECIPES_TABLENAME}
+         |VALUES ($id)
+      """.stripMargin
+    val stmt = conn.createStatement
+    stmt.execute(query)
+    stmt.close()
+  }
+
+  @throws[SQLException]
+  def insertReview(id: Long): Unit = {
+    val query =
+      s"""
+         |INSERT INTO ${DatabaseDAO.REVIEWS_TABLENAME}
+         |VALUES ($id)
+      """.stripMargin
+    val stmt = conn.createStatement
+    stmt.execute(query)
+    stmt.close()
+  }
+
+  @throws[SQLException]
+  def deleteUser(id: Long): Unit = {
+    val query =
+      s"""
+         |DELETE FROM ${DatabaseDAO.USERS_TABLENAME}
+         |WHERE id = $id
+      """.stripMargin
+    val stmt = conn.createStatement
+    stmt.execute(query)
+    stmt.close()
+  }
+
+  @throws[SQLException]
+  def deleteRecipe(id: Long): Unit = {
+    val query =
+      s"""
+         |DELETE FROM ${DatabaseDAO.RECIPES_TABLENAME}
+         |WHERE id = $id
+      """.stripMargin
+    val stmt = conn.createStatement
+    stmt.execute(query)
+    stmt.close()
+  }
+
+  @throws[SQLException]
+  def deleteReview(id: Long): Unit = {
+    val query =
+      s"""
+         |DELETE FROM ${DatabaseDAO.REVIEWS_TABLENAME}
+         |WHERE id = $id
       """.stripMargin
     val stmt = conn.createStatement
     stmt.execute(query)
@@ -226,36 +282,13 @@ object DatabaseDAO{
   }
 
   @throws[SQLException]
-  def insertRecipe(id: Long): Unit = {
-    val query =
-      s"""
-         |INSERT INTO ${DatabaseDAO.RECIPES_TABLENAME}
-         |VALUES ($id)
-      """.stripMargin
-    val stmt = conn.createStatement
-    stmt.execute(query)
-    stmt.close()
-  }
-
-  @throws[SQLException]
-  def insertReview(id: Long): Unit = {
-    val query =
-      s"""
-         |INSERT INTO ${DatabaseDAO.REVIEWS_TABLENAME}
-         |VALUES ($id)
-      """.stripMargin
-    val stmt = conn.createStatement
-    stmt.execute(query)
-    stmt.close()
-  }
-
-  @throws[SQLException]
-  def existsUser(id: Long): Boolean = {
+  def isUserProcessed(id: Long): Boolean = {
     val query =
       s"""
          |SELECT COUNT(*) as number
          |FROM ${DatabaseDAO.USERS_TABLENAME}
          |WHERE id = $id
+         |AND queue = 0
       """.stripMargin
     val stmt = conn.createStatement
     val result = stmt.executeQuery(query)
@@ -267,13 +300,12 @@ object DatabaseDAO{
   }
 
   @throws[SQLException]
-  def isUserProcessed(id: Long): Boolean = {
+  def existsUser(id: Long): Boolean = {
     val query =
       s"""
          |SELECT COUNT(*) as number
          |FROM ${DatabaseDAO.USERS_TABLENAME}
          |WHERE id = $id
-         |AND queue = 0
       """.stripMargin
     val stmt = conn.createStatement
     val result = stmt.executeQuery(query)
@@ -379,4 +411,46 @@ object DatabaseDAO{
     stmt.close()
     number
   }
+
+  @throws[SQLException]
+  def insertRecipes(recipes: Long*): Unit = {
+    val query = s"""
+                   |INSERT INTO ${DatabaseDAO.RECIPES_TABLENAME}
+                   |VALUES (?)
+      """.stripMargin
+    val statement = conn.prepareStatement(query)
+    recipes.foreach(recipe => {
+      statement.setLong(1, recipe)
+      statement.executeUpdate()
+    })
+    statement.close()
+  }
+
+  @throws[SQLException]
+  def insertReviews(reviews: Long*): Unit = {
+    val query = s"""
+                   |INSERT INTO ${DatabaseDAO.REVIEWS_TABLENAME}
+                   |VALUES (?)
+      """.stripMargin
+    val statement = conn.prepareStatement(query)
+    reviews.foreach(review => {
+      statement.setLong(1, review)
+      statement.executeUpdate()
+    })
+    statement.close()
+  }
+
+  @throws[SQLException]
+  def beginTransaction(): Unit = conn.setAutoCommit(false)
+
+  @throws[SQLException]
+  def commit(): Unit = conn.commit()
+
+  @throws[SQLException]
+  def rollback(): Unit = conn.rollback()
+
+  @throws[SQLException]
+  def endTransaction(): Unit = conn.setAutoCommit(true)
+
+  def getConnection : Connection = conn
 }

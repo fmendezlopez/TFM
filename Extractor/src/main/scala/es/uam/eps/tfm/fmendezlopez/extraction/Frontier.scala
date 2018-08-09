@@ -50,7 +50,8 @@ class Frontier(implicit override val ord: Ordering[UserDTO])
       if(elem.isLeft){
       current_priority = elem.left.get.priority
       elem.left.get
-      }
+      } //todo añadir columna de timestamp y al llamar DatabaseDAO.getUsers ordenar los de esa prioridad por el timestamp
+        //todo reducir a 25 followers y 25 following
       else {
         if(elem.right.get.nonEmpty){
           super.enqueue(elem.right.get: _*)

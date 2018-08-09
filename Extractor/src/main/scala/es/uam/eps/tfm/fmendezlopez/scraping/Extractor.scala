@@ -296,7 +296,7 @@ object Extractor extends Logging{
               exists = DatabaseDAO.existsRecipe(id)
 
               if(exists || repeated_recipes.contains(id) || scraped.contains(id)){
-                logger.info(s"Recipe with id ${id} has already been scraped")
+                logger.debug(s"Recipe with id ${id} has already been scraped")
                 if(!repeated_recipes.contains(id))
                   repeated_recipes += id
                 recipes += 1

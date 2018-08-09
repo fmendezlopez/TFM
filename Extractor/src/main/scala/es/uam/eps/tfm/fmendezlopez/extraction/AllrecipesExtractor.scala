@@ -95,8 +95,7 @@ object AllrecipesExtractor extends Logging{
       case Failure(e) =>
         Try {
           logger.info(e)
-          DatabaseDAO.connectAndCreate()
-          DatabaseDAO.configure()
+          DatabaseDAO.createAndConnect()
           logger.info("Creating new database...")
         }
         match {
@@ -162,17 +161,18 @@ object AllrecipesExtractor extends Logging{
     val nlines = properties.getLong("stage4.stage1.scraping.nlines")
     val delay_nlines = properties.getLong("stage4.stage1.scraping.delay.nlines")
 
-    val max_userreviews = properties.getInt("stage4.stage1.scraping.max.user.reviews")
-    //val max_userreviews = 1
-    val max_userfollowing = properties.getInt("stage4.stage1.scraping.max.user.following")
-    val max_userfollower = properties.getInt("stage4.stage1.scraping.max.user.follower")
-    //val max_userfollowing = 1
-    //val max_userfollower = 1
-    val maxrecipes = properties.getInt("stage4.stage1.scraping.max_recipes_user")
-    //val maxrecipes = 1
+    //val max_userreviews = properties.getInt("stage4.stage1.scraping.max.user.reviews")
+    val max_userreviews = 2
+    //val max_userfollowing = properties.getInt("stage4.stage1.scraping.max.user.following")
+    //val max_userfollower = properties.getInt("stage4.stage1.scraping.max.user.follower")
+    val max_userfollowing = 2
+    val max_userfollower = 2
+    //val maxrecipes = properties.getInt("stage4.stage1.scraping.max_recipes_user")
+    val maxrecipes = 1
     val minrecipes = properties.getInt("stage4.stage1.scraping.minrecipes")
     val minreviews = properties.getInt("stage4.stage1.scraping.minreviews")
-    val max_reviews_per_recipe = properties.getInt("stage4.stage1.scraping.maxreviewsperrecipe")
+    //val max_reviews_per_recipe = properties.getInt("stage4.stage1.scraping.maxreviewsperrecipe")
+    val max_reviews_per_recipe = 3
     val min_review_text_length = properties.getInt("stage4.stage1.scraping.minreviewtextlength")
     val duration = state.getDouble("duration")
     val start = System.currentTimeMillis()
@@ -295,6 +295,43 @@ object AllrecipesExtractor extends Logging{
                 val followers = filterUsers(potFollowers.get)
                 logger.info(s"Got ${followers.size} followers")
 
+                if(peeked) current_priority = frontier.dequeue.priority
+
+                //Enqueue followers and followees
+                last_priority += 1
+
+                val users: Set[Long] = (followers.map(_.id) ++ following.map(_.id)).filterNot(DatabaseDAO.existsUser)
+                try {
+                  //DatabaseDAO.printUsers
+                  //frontier.enqueue(followers.map(user => UserDTO(user.id, priority)): _*)
+                  //frontier.enqueue(following.map(user => UserDTO(user.id, priority)): _*)
+
+                } catch {
+                  case sql: SQLException =>
+                    logger.fatal(sql.getMessage)
+                    beforeExit(state)
+                    System.exit(1)
+                }
+
+                logger.info("Writing into database...")
+                try{
+                  DatabaseDAO.beginTransaction()
+                  frontier.enqueue(users.map(user => UserDTO(user, last_priority)).toSeq: _*)
+                  queued_users = DatabaseDAO.countQueuedUsers
+                  DatabaseDAO.insertRecipes(newIDs.toSeq :_*)
+                  DatabaseDAO.insertReviews(reviews.map(_.id).toSeq :_*)
+                  if(!peeked) DatabaseDAO.insertUser(id, false)
+                  DatabaseDAO.commit()
+                  DatabaseDAO.endTransaction()
+                } catch {
+                  case sql: SQLException =>
+                    logger.fatal("Error during recipes ingestion")
+                    logger.fatal(sql)
+                    logger.fatal("Rolling back...")
+                    DatabaseDAO.rollback()
+                    System.exit(1)
+                }
+
                 //Dataset writing
                 logger.info("Writing into dataset...")
                 datasetDAO.addRecipes(new_recipes.values.flatten.toSeq)
@@ -310,63 +347,10 @@ object AllrecipesExtractor extends Logging{
                 extracted_users += 1
                 total_recipes += new_recipes_number
 
-                if(peeked) current_priority = frontier.dequeue.priority
-
-                //Enqueue followers and followees
-                last_priority += 1
-                val users: Set[Long] = (followers.map(_.id).toSet ++ following.map(_.id).toSet).filterNot(DatabaseDAO.existsUser)
-                try {
-                  //DatabaseDAO.printUsers
-                  //frontier.enqueue(followers.map(user => UserDTO(user.id, priority)): _*)
-                  //frontier.enqueue(following.map(user => UserDTO(user.id, priority)): _*)
-                  frontier.enqueue(users.map(user => UserDTO(user, last_priority)).toSeq: _*)
-                  queued_users = DatabaseDAO.countQueuedUsers
-                } catch {
-                  case sql: SQLException =>
-                    logger.fatal(sql.getMessage)
-                    beforeExit(state)
-                    System.exit(1)
-                }
-
                 logger.info(s"Extracted $total_reviews reviews in total")
                 logger.info(s"Extracted $total_recipes recipes in total")
                 logger.info(s"Extracted $extracted_users users in total")
                 logger.info(s"Queued users: $queued_users")
-
-                logger.info("Writing into database...")
-                //insert recipes into DB
-                newIDs.foreach(id =>
-                  try {
-                    DatabaseDAO.insertRecipe(id)
-                  } catch {
-                    case sql: SQLException =>
-                      logger.fatal(sql.getMessage)
-                      beforeExit(state)
-                      System.exit(1)
-                  }
-                )
-
-                //insert reviews into DB
-                reviews.foreach(review =>
-                  try {
-                    DatabaseDAO.insertReview(review.id)
-                  } catch {
-                    case sql: SQLException =>
-                      logger.fatal(sql.getMessage)
-                      beforeExit(state)
-                      System.exit(1)
-                  }
-                )
-
-                //insert user into DB
-                if(!DatabaseDAO.existsUser(id)) {
-                  try {
-                    DatabaseDAO.insertUser(id, false)
-                  } catch {
-                    case sql: SQLException =>
-                      logger.fatal(sql)
-                  }
-                }
 
                 state.put("duration", duration + (System.currentTimeMillis() - start) / 60000)
                 state.put("currentPriority", current_priority)
