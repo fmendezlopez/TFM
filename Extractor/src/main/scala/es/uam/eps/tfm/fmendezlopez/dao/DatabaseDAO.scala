@@ -235,17 +235,20 @@ object DatabaseDAO{
   def printUsers: Unit= {
     val select_query =
       s"""
-         |SELECT id FROM ${DatabaseDAO.USERS_TABLENAME}
+         |SELECT * FROM ${DatabaseDAO.USERS_TABLENAME}
       """.stripMargin
 
     val stmt = conn.createStatement
-    stmt.executeQuery(select_query)
-    val users = stmt.getResultSet
-    var ret: Seq[Long] = Seq()
-    while(users.next()) ret :+= users.getInt(1).toLong
-    ret.foreach(println)
+    val result = stmt.executeQuery(select_query)
+    result.next
+    do{
+      val id = result.getLong(1)
+      val queued = result.getInt(2)
+      val priority = result.getInt(3)
+      println(s"$id $queued $priority")
+    } while(result.next())
+    result.close()
     stmt.close()
-    ret
   }
 
   @throws[SQLException]

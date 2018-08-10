@@ -65,6 +65,7 @@ object AllrecipesExtractor extends Logging{
           seeds.put("lastLine", 0)
           json.put("seeds", seeds)
           json.put("duration", 0.0f)
+          json.put("last_user", -1)
           json
         case e: Exception => logger.fatal(e);System.exit(1);null
       }
@@ -105,7 +106,8 @@ object AllrecipesExtractor extends Logging{
       case _ =>
     }
 
-    logger.info(s"Starting with: \t$extracted_users users \t$total_recipes recipes \t$total_reviews reviews")
+    logger.info(s"Starting with: \n\t-$extracted_users users \n\t-$total_recipes recipes \n\t-$total_reviews reviews " +
+      s"\n\t-$queued_users")
 
     //Dataset access
     val datasetDAO = DatasetCSVDAO
@@ -190,6 +192,8 @@ object AllrecipesExtractor extends Logging{
               }).getOrElse((seed, false))
             }
           logger.info(s"Processing user $id")
+          state.put("last_user", id)
+          JSONManager.writeJSON(state, statePath)
 
           //DB check
           val exists: Boolean =
@@ -294,13 +298,12 @@ object AllrecipesExtractor extends Logging{
 
                 val followers = filterUsers(potFollowers.get)
                 logger.info(s"Got ${followers.size} followers")
-
                 if(peeked) current_priority = frontier.dequeue.priority
-
                 //Enqueue followers and followees
                 last_priority += 1
 
                 val users: Set[Long] = (followers.map(_.id) ++ following.map(_.id)).filterNot(DatabaseDAO.existsUser)
+                /*
                 try {
                   //DatabaseDAO.printUsers
                   //frontier.enqueue(followers.map(user => UserDTO(user.id, priority)): _*)
@@ -312,6 +315,7 @@ object AllrecipesExtractor extends Logging{
                     beforeExit(state)
                     System.exit(1)
                 }
+                */
 
                 logger.info("Writing into database...")
                 try{
@@ -355,6 +359,7 @@ object AllrecipesExtractor extends Logging{
                 state.put("duration", duration + (System.currentTimeMillis() - start) / 60000)
                 state.put("currentPriority", current_priority)
                 state.put("lastPriority", last_priority)
+                state.put("last_user", -1)
                 logger.info(s"${state.toString}")
                 if (extracted_users % nlines == 0) {
                   logger.info(s"$nlines users processed. Sleeping...")
