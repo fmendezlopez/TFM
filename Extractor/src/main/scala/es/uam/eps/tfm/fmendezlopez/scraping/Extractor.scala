@@ -419,10 +419,10 @@ object Extractor extends Logging{
   @throws[ScrapingDetectionException]
   @throws[SQLException]
   @throws[APIAuthorizationException]
-  def extractUserReviews(author_id : Long, csvDelimiter : String, nReviews : Int) : Option[Seq[Review]] = {
+  def extractUserReviews(author_id : Long, csvDelimiter : String, nReviews : Int) : Option[Map[Long, Review]] = {
     val pageSize = HttpManager.getProperty("max-pagesize").toInt
     val npages = math.ceil(nReviews.toDouble / pageSize).toInt
-    var result : Seq[Review] = Seq()
+    var result : Map[Long, Review] = Map()
     try{
       (1 to npages).foreach(i => {
         val ret = HttpManager.requestUserReviews(author_id, pagesize = pageSize, pageNumber = i)
@@ -430,8 +430,8 @@ object Extractor extends Logging{
           logger.error(s"Could not retrieve user reviews for id ${author_id}")
           return None
         }
-        val list : Seq[Review] = Scraper.scrapeReviewsList(Some(author_id), ret.get, csvDelimiter, nReviews)
-        result ++= list.filterNot(review =>DatabaseDAO.existsReview(review.id))
+        val list : Map[Long, Review] = Scraper.scrapeReviewsList(Some(author_id), ret.get, csvDelimiter, nReviews)
+        result ++= list.filterNot({case(id, _) => DatabaseDAO.existsReview(id) && !result.isDefinedAt(id)})
       })
       Some(result)
     } catch {
@@ -513,19 +513,19 @@ object Extractor extends Logging{
                             reviews_per_recipe: Int,
                             min_text_length: Int,
                             csvDelimiter: String)
-  : Map[Long, Set[Review]] =
+  : Map[Long, Seq[Review]] =
   {
     val pageSize = HttpManager.getProperty("max-pagesize").toInt
     val npages = math.ceil(reviews_per_recipe.toDouble / pageSize).toInt
     recipes.flatMap(recipe => {
-      val seq: Set[Review] = (1 to npages).flatMap(pageNumber => {
+      val seq: Seq[Review] = (1 to npages).flatMap(pageNumber => {
         val potReviews = HttpManager.requestRecipeReviewsAPI(recipe, pagesize = pageSize, pageNumber = pageNumber)
-        val json = potReviews.getOrElse("""{"reviews": []}""")
+        val json = potReviews.getOrElse({logger.warn(s"Could not extract reviews for recipe $recipe");"""{"reviews": []}"""})
         Scraper
           .scrapeRecipesReviewsList(recipe, json, csvDelimiter, reviews_per_recipe)
           .filterNot(review => DatabaseDAO.existsReview(review.id))
           .filter(_.text.length >= min_text_length)
-      }).toSet
+      })
       Map(recipe -> seq)
     }) toMap
   }

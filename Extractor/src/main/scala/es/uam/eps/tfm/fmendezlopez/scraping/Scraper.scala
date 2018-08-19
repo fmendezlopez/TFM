@@ -442,50 +442,52 @@ object Scraper extends Logging{
     category
   }
 
-  def scrapeReviewsList(author_id: Option[Long], json : String, csvSeparator : String, nReviews: Int) : Seq[Review] = {
+  def scrapeReviewsList(author_id: Option[Long], json : String, csvSeparator : String, nReviews: Int) : Map[Long, Review] = {
     val mainJSON = new JSONObject(json)
-    var result : Seq[Review] = Seq()
+    var result : Map[Long, Review] = Map()
     val arr = mainJSON.getJSONArray("reviews")
     var i = 0
     val length = nReviews.min(arr.length())
     while(i < length){
       val review = arr.getJSONObject(i)
       val id = review.getLong("reviewID")
-      val rating = review.getInt("rating")
-      val text = prepareAllrecipesString(review.getString("text"))
-      val dateTokenizer = new StringTokenizer(review.getString("dateLastModified"))
-      val date = dateTokenizer.nextToken("T")
-      val helpfulCount = review.getInt("helpfulCount")
-      val author = new Author
-      val json_author = review.getJSONObject("submitter")
-      //author.id_=(json_author.getLong("userID"))
-      author.id_=(author_id.getOrElse(json_author.getLong("userID")))
-      author.url_=(baseURL + json_author.getString("profileUrl").replace(csvSeparator, " "))
+      if(!result.isDefinedAt(id)){
+        val rating = review.getInt("rating")
+        val text = prepareAllrecipesString(review.getString("text"))
+        val dateTokenizer = new StringTokenizer(review.getString("dateLastModified"))
+        val date = dateTokenizer.nextToken("T")
+        val helpfulCount = review.getInt("helpfulCount")
+        val author = new Author
+        val json_author = review.getJSONObject("submitter")
+        //author.id_=(json_author.getLong("userID"))
+        author.id_=(author_id.getOrElse(json_author.getLong("userID")))
+        author.url_=(baseURL + json_author.getString("profileUrl").replace(csvSeparator, " "))
 
-      val recipe = new Recipe
-      val json_recipe = review.getJSONObject("recipe")
-      recipe.id_=(json_recipe.getLong("recipeID"))
-      var rec_url = ""
-      val links = json_recipe.getJSONObject("links")
-      var weburl =
-        if(links.has("recipeUrl") && !links.isNull("recipeUrl")) links.getJSONObject("recipeUrl").getString("href")
-        else ""
-      val apiurl =
-        if(links.has("parent") && !links.isNull("parent")) links.getJSONObject("parent").getString("href").replace(csvSeparator, " ")
-        else ""
-      if(weburl.isEmpty) weburl = Utils.compoundRecipeURL(id.toString, baseURLRecipeWeb)
-      recipe.apiurl_=(apiurl)
-      recipe.weburl_=(weburl)
+        val recipe = new Recipe
+        val json_recipe = review.getJSONObject("recipe")
+        recipe.id_=(json_recipe.getLong("recipeID"))
+        var rec_url = ""
+        val links = json_recipe.getJSONObject("links")
+        var weburl =
+          if(links.has("recipeUrl") && !links.isNull("recipeUrl")) links.getJSONObject("recipeUrl").getString("href")
+          else ""
+        val apiurl =
+          if(links.has("parent") && !links.isNull("parent")) links.getJSONObject("parent").getString("href").replace(csvSeparator, " ")
+          else ""
+        if(weburl.isEmpty) weburl = Utils.compoundRecipeURL(id.toString, baseURLRecipeWeb)
+        recipe.apiurl_=(apiurl)
+        recipe.weburl_=(weburl)
 
-      val rev = new Review
-      rev.id_=(id)
-      rev.rating_=(rating)
-      rev.text_=(text)
-      rev.date_=(date)
-      rev.helpfulCount_=(helpfulCount)
-      rev.author_=(author)
-      rev.recipe_=(recipe)
-      result :+= rev
+        val rev = new Review
+        rev.id_=(id)
+        rev.rating_=(rating)
+        rev.text_=(text)
+        rev.date_=(date)
+        rev.helpfulCount_=(helpfulCount)
+        rev.author_=(author)
+        rev.recipe_=(recipe)
+        result += (rev.id -> rev)
+      }
       i += 1
     }
     result

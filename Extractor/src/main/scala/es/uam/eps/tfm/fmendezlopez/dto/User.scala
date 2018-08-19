@@ -51,6 +51,6 @@ class User {
   def profileUrl_= (value : String) = _profileUrl = value
 
   def toSeq : Seq[Any] = {
-    Seq(_id, _name, _followerCount, _followingCount, _madeitCount, _favCount, _ratingCount, _recipeCount, _reviewCount, _city, _region, _country, _handle, _profileUrl)
+    Seq(_id, _name, _city, _region, _country, _handle, _profileUrl, _followerCount, _followingCount, _madeitCount, _favCount, _ratingCount, _recipeCount, _reviewCount)
   }
 }

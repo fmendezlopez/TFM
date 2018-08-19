@@ -1,6 +1,7 @@
 package es.uam.eps.tfm.fmendezlopez.utils
 
 import java.io.File
+import java.sql.SQLException
 
 import es.uam.eps.tfm.fmendezlopez.dao.DatasetSQLDAO
 
@@ -61,33 +62,43 @@ object CSVtoSQL {
       "users" -> prop("stage4.stage1.database.users.tablename")
     )
 
-    readers("categories").all()
-      .foreach(line => dataset.insertData(tables("categories"), line, properties.getString("stage4.stage1.database.categories.stringfields").split(',').map(_.toInt)))
-    readers("recipes").all()
-      .foreach(line => dataset.insertData(tables("recipes"), line, properties.getString("stage4.stage1.database.recipes.stringfields").split(',').map(_.toInt)))
-
-    readers("users").all()
-      .foreach(line => dataset.insertData(tables("users"), line, properties.getString("stage4.stage1.database.users.stringfields").split(',').map(_.toInt)))
-    readers("favourites").all()
-      .foreach(line =>
-        dataset.insertData(tables("favourites"), line)
-      )
-    readers("madeit").all()
-      .foreach(line => dataset.insertData(tables("madeit"), line))
-    readers("publications").all()
-      .foreach(line => dataset.insertData(tables("publications"), line))
-    readers("reviews").all()
-      .foreach(line => dataset.insertData(tables("reviews"), line, properties.getString("stage4.stage1.database.reviews.stringfields").split(',').map(_.toInt)))
-    readers("steps").all()
-      .foreach(line => dataset.insertData(tables("steps"), line, properties.getString("stage4.stage1.database.steps.stringfields").split(',').map(_.toInt)))
-    readers("similar").all()
-      .foreach(line => dataset.insertData(tables("similar"), line))
-    readers("nutrition").all()
-      .foreach(line => dataset.insertData(tables("nutrition"), line))
-    readers("ingredients").all()
-      .foreach(line => dataset.insertData(tables("ingredients"), line, properties.getString("stage4.stage1.database.ingredients.stringfields").split(',').map(_.toInt)))
-    readers("fellowship").all()
-      .foreach(line => dataset.insertData(tables("fellowship"), line))
+    try {
+      dataset.beginTransaction()
+      dataset.insertData(tables("categories"), readers("categories").all(),
+        properties.getString("stage4.stage1.database.categories.stringfields").split(',').map(_.toInt))
+      /*
+      readers("recipes").all()
+        .foreach(line => dataset.insertData(tables("recipes"), line, properties.getString("stage4.stage1.database.recipes.stringfields").split(',').map(_.toInt)))
+      readers("users").all()
+        .foreach(line => dataset.insertData(tables("users"), line, properties.getString("stage4.stage1.database.users.stringfields").split(',').map(_.toInt)))
+      readers("favourites").all()
+        .foreach(line =>
+          dataset.insertData(tables("favourites"), line)
+        )
+      readers("madeit").all()
+        .foreach(line => dataset.insertData(tables("madeit"), line))
+      readers("publications").all()
+        .foreach(line => dataset.insertData(tables("publications"), line))
+      readers("reviews").all()
+        .foreach(line => dataset.insertData(tables("reviews"), line, properties.getString("stage4.stage1.database.reviews.stringfields").split(',').map(_.toInt)))
+      readers("steps").all()
+        .foreach(line => dataset.insertData(tables("steps"), line, properties.getString("stage4.stage1.database.steps.stringfields").split(',').map(_.toInt)))
+      readers("similar").all()
+        .foreach(line => dataset.insertData(tables("similar"), line))
+      readers("nutrition").all()
+        .foreach(line => dataset.insertData(tables("nutrition"), line))
+      readers("ingredients").all()
+        .foreach(line => dataset.insertData(tables("ingredients"), line, properties.getString("stage4.stage1.database.ingredients.stringfields").split(',').map(_.toInt)))
+      readers("fellowship").all()
+        .foreach(line => dataset.insertData(tables("fellowship"), line))
+        */
+      dataset.rollback()
+    } catch {
+      case sql: SQLException => {
+        dataset.rollback()
+      }
+    }
+    dataset.endTransaction()
     readers.foreach(_._2.close())
     dataset.disconnect()
   }

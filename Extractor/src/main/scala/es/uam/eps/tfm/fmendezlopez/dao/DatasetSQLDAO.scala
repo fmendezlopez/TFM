@@ -35,30 +35,93 @@ object DatasetSQLDAO {
   @throws[IOException]
   def disconnect(): Unit = conn.close()
 
+  /*
   @throws[SQLException]
   def insertData(tableName: String, data: Seq[String], string_fields: Seq[Int] = Seq()): Unit = {
-
-      val query =
-        s"""
-          |INSERT INTO "$tableName"
-          |VALUES (${
-          data
-          .zipWithIndex
-            .map({case(column, index) =>
-              if(string_fields.contains(index))
-                s"""'${column.replace("'", "")}'"""
-              else
-                column})
-            .mkString(",")})
-        """.stripMargin
-      val stmt = conn.createStatement
-      try{
-        stmt.execute(query)
-        stmt.close()
-      } catch {
-        case e: SQLException =>
-          println(e.getMessage)
-      }
-
+    var a = data
+      .zipWithIndex
+      .map({case(column, index) =>
+        if(string_fields.contains(index)) {
+          s"""'${column.replace("'", "")}'"""
+        }
+        else column})
+      .mkString(",")
+    val query =
+      s"""
+        |INSERT INTO "$tableName"
+        |VALUES (${a})
+      """.stripMargin
+    val stmt = conn.createStatement
+    try{
+      stmt.execute(query)
+      stmt.close()
+    } catch {
+      case e: SQLException =>
+        println(s"a: $a")
+        println(query)
+        println(e.getMessage)
+        println(e)
+        println(e.getErrorCode)
+        println(e.getSQLState)
+        System.exit(1)
+    }
   }
+  */
+
+  @throws[SQLException]
+  def insertData(tableName: String, data: Seq[Seq[String]], string_fields: Seq[Int] = Seq()): Unit = {
+    val b = data.head.length
+    val a = Seq.fill(b)("?") mkString(",")
+    val query =
+      s"""
+         |INSERT INTO "$tableName"
+         |VALUES (${a})
+      """.stripMargin
+    val stmt = conn.prepareStatement(query)
+    data
+      .foreach(seq => {
+        val value =
+          seq
+          .zipWithIndex
+          .map({case(column, index) =>
+              val col =
+                if(string_fields.contains(index)) {
+                  s"""'${column.replace("'", "")}'"""
+                }
+                else column
+            (index, col)
+          })
+          //.mkString(",")
+        try{
+          value.foreach({case(index, col) => stmt.setObject(index + 1, col)})
+          stmt.executeUpdate()
+        } catch {
+          case e: SQLException =>
+            println(s"value: $value")
+            println(query)
+            println(e.getMessage)
+            println(e)
+            println(e.getErrorCode)
+            println(e.getSQLState)
+            stmt.close()
+            conn.close()
+            System.exit(1)
+        }
+      })
+    stmt.close()
+  }
+
+  @throws[SQLException]
+  def beginTransaction(): Unit = conn.setAutoCommit(false)
+
+  @throws[SQLException]
+  def commit(): Unit = conn.commit()
+
+  @throws[SQLException]
+  def rollback(): Unit = conn.rollback()
+
+  @throws[SQLException]
+  def endTransaction(): Unit = conn.setAutoCommit(true)
+
+  def getConnection : Connection = conn
 }

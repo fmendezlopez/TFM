@@ -1,6 +1,8 @@
 package es.uam.eps.tfm.fmendezlopez
 
 import java.io.File
+
+import es.uam.eps.tfm.fmendezlopez.dto.{Recipe, Review}
 import java.sql.{Date, SQLException}
 import java.text.{DateFormat, SimpleDateFormat}
 import java.time.Duration
@@ -36,16 +38,13 @@ object Prueba {
       val conn = db.getConnection
       val query =
         s"""
-           |SELECT * FROM VISITED_USERS
+           |SELECT COUNT(*) FROM VISITED_REVIEWS
        """.stripMargin
       val stmt = conn.createStatement
       val result = stmt.executeQuery(query)
-      result.next
       while(result.next()){
         val id = result.getLong(1)
-        val queued = result.getInt(2)
-        val priority = result.getInt(3)
-        println(s"$id $queued $priority")
+        println(s"$id")
       }
       result.close()
       stmt.close()

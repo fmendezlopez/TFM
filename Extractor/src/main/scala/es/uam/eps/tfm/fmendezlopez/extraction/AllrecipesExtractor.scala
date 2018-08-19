@@ -107,7 +107,7 @@ object AllrecipesExtractor extends Logging{
     }
 
     logger.info(s"Starting with: \n\t-$extracted_users users \n\t-$total_recipes recipes \n\t-$total_reviews reviews " +
-      s"\n\t-$queued_users")
+      s"\n\t-$queued_users queued users")
 
     //Dataset access
     val datasetDAO = DatasetCSVDAO
@@ -258,15 +258,23 @@ object AllrecipesExtractor extends Logging{
                   beforeExit(state)
                   System.exit(1)
                 }
-                val user_reviews = potReviews.get.toSet
+                val user_reviews: Map[Long, Review] = potReviews.get
                 logger.info(s"Got ${user_reviews.size} user reviews")
-                logger.info("Getting recipes from reviews...")
+                logger.info("Getting reviews from recipes...")
                 Thread.sleep(500)
 
-                val recipes_reviews_map = Extractor.extractRecipesReviews(newIDs, max_reviews_per_recipe, min_review_text_length, csvDelimiter)
-                val recipes_reviews: Set[Review] = recipes_reviews_map.values.reduce(_ ++ _).toSet
-                val reviews: Set[Review] = recipes_reviews ++ user_reviews
-                logger.info(s"Got ${recipes_reviews.size} recipes reviews")
+                val recipes_reviews: Map[Long, Seq[Review]] = Extractor.extractRecipesReviews(newIDs, max_reviews_per_recipe, min_review_text_length, csvDelimiter)
+                val recipes_reviews_map: Map[Long, Review] = recipes_reviews.values.flatten.flatMap(rev => Map(rev.id -> rev)).toMap
+                val reviews_map: Map[Long, Review] = recipes_reviews_map ++
+                    user_reviews.filter({case(id, _) => !recipes_reviews_map.isDefinedAt(id)})
+                val reviews = reviews_map.values
+                logger.info(s"Got ${reviews.size} reviews from recipes")
+                val reviewsindb = reviews_map.keys
+                val reviewsincsv = reviews
+                if(reviewsindb.size != reviewsincsv.size){
+                  logger.info(s"WARRNN!!!: ${reviewsincsv.size} ${reviewsindb.size}")
+                }
+
                 Thread.sleep(500)
 
                 logger.info("Getting user following...")
@@ -323,7 +331,7 @@ object AllrecipesExtractor extends Logging{
                   frontier.enqueue(users.map(user => UserDTO(user, last_priority)).toSeq: _*)
                   queued_users = DatabaseDAO.countQueuedUsers
                   DatabaseDAO.insertRecipes(newIDs.toSeq :_*)
-                  DatabaseDAO.insertReviews(reviews.map(_.id).toSeq :_*)
+                  DatabaseDAO.insertReviews(reviewsindb.toSeq :_*)
                   if(!peeked) DatabaseDAO.insertUser(id, false)
                   DatabaseDAO.commit()
                   DatabaseDAO.endTransaction()
@@ -343,13 +351,13 @@ object AllrecipesExtractor extends Logging{
                 datasetDAO.addUser(user)
                 datasetDAO.addFavourites(user.id, favourites)
                 datasetDAO.addMadeIt(user.id, madeit)
-                datasetDAO.addReviews(reviews.toSeq)
+                datasetDAO.addReviews(reviewsincsv.toSeq)
                 datasetDAO.addFollowers(user, followers.map(_.id).toSeq)
                 datasetDAO.addFollowing(user, following.map(_.id).toSeq)
 
                 total_reviews += reviews.size
                 extracted_users += 1
-                total_recipes += new_recipes_number
+                total_recipes += len
 
                 logger.info(s"Extracted $total_reviews reviews in total")
                 logger.info(s"Extracted $total_recipes recipes in total")
