@@ -1,6 +1,6 @@
 package es.uam.eps.tfm.fmendezlopez
 
-import java.io.File
+import java.io.{File, FilenameFilter}
 
 import es.uam.eps.tfm.fmendezlopez.dto.{Recipe, Review}
 import java.sql.{Date, SQLException}
@@ -31,32 +31,14 @@ import scala.collection.mutable
 object Prueba {
 
   def main(args: Array[String]): Unit = {
+    val in = "C:\\Users\\franm\\IdeaProjects\\TFM\\Extractor\\src\\main\\resources\\input\\dataset"
+    val out = "C:\\Users\\franm\\IdeaProjects\\TFM\\Extractor\\src\\main\\resources\\input\\as"
 
-    val db = DatabaseDAO
-    try {
-      db.connect
-      val conn = db.getConnection
-      val query =
-        s"""
-           |SELECT COUNT(*) FROM VISITED_REVIEWS
-       """.stripMargin
-      val stmt = conn.createStatement
-      val result = stmt.executeQuery(query)
-      while(result.next()){
-        val id = result.getLong(1)
-        println(s"$id")
-      }
-      result.close()
-      stmt.close()
-      conn.close()
-      db.disconnectAndDrop()
-    } catch{
-      case sql: SQLException => {
-        println(sql)
-        println(sql.getStackTrace)
-        println(sql.getMessage)
-      }
-    }
+    new File(in).listFiles().foreach(file => {
+      val reader = CSVManager.openCSVReader(file, '|')
+      val writer = CSVManager.openCSVWriter(out, file.getName, '|')
+      writer.writeAll(reader.all().map(line => line.map(_.replace("\u0000", ""))))
+    })
   }
 
 

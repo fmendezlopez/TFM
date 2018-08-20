@@ -1,7 +1,7 @@
 package es.uam.eps.tfm.fmendezlopez.dao
 
 import java.io.IOException
-import java.sql.{Connection, DriverManager, SQLException}
+import java.sql.{Connection, DriverManager, SQLException, SQLType}
 
 import es.uam.eps.tfm.fmendezlopez.dao.DatabaseDAO.conn
 import org.apache.commons.configuration2.Configuration

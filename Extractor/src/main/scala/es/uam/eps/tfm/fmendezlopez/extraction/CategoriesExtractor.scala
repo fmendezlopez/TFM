@@ -25,8 +25,6 @@ import org.apache.http.conn.ConnectTimeoutException
 import org.apache.http.impl.client.{CloseableHttpClient, DefaultHttpClient, HttpClientBuilder}
 import org.apache.http.util.EntityUtils
 import org.json.{JSONArray, JSONObject}
-import org.json4s._
-import org.json4s.native.JsonMethods._
 
 import scala.collection.mutable
 
