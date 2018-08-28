@@ -237,16 +237,17 @@ object AllrecipesExtractor extends Logging{
               }
 
               val user_recipes = potUserRecipes.get
-              val new_recipes: Map[String, Seq[Recipe]] = user_recipes._1
+              val new_recipes_map: Map[String, Seq[Recipe]] = user_recipes._1
+              val new_recipes = new_recipes_map.values.reduce(_ ++ _)
               val rep_recipes: Map[String, Seq[Long]] = user_recipes._2
-              val publications = user_recipes._1("recipes").map(_.id)
-              val favourites = new_recipes("fav").map(_.id) ++ rep_recipes("fav")
-              val madeit = new_recipes("madeit").map(_.id) ++ rep_recipes("madeit")
+              val publications = new_recipes_map("recipes").map(_.id)
+              val favourites = new_recipes_map("fav").map(_.id) ++ rep_recipes("fav")
+              val madeit = new_recipes_map("madeit").map(_.id) ++ rep_recipes("madeit")
 
-              val newIDs: Set[Long] = new_recipes.values.reduce(_ ++ _).flatMap(r => Seq(r.id)).toSet
-              val new_recipes_number = newIDs.size
+              val newIDs_user_recipes: Set[Long] = new_recipes.map(_.id).toSet
+              val new_recipes_number = newIDs_user_recipes.size
               val rep_recipes_number = rep_recipes.values.reduce(_ ++ _).size
-              logger.info(s"Got ${newIDs.size} new recipes and $rep_recipes_number repeated recipes")
+              logger.info(s"Got ${newIDs_user_recipes.size} new recipes and $rep_recipes_number repeated recipes")
 
               val len = new_recipes_number + rep_recipes_number
 
@@ -260,10 +261,16 @@ object AllrecipesExtractor extends Logging{
                 }
                 val user_reviews: Map[Long, Review] = potReviews.get
                 logger.info(s"Got ${user_reviews.size} user reviews")
-                logger.info("Getting reviews from recipes...")
                 Thread.sleep(500)
 
-                val recipes_reviews: Map[Long, Seq[Review]] = Extractor.extractRecipesReviews(newIDs, max_reviews_per_recipe, min_review_text_length, csvDelimiter)
+                logger.info("Getting recipes from user reviews...")
+                val recipes_from_reviews = Extractor.extractRecipeFromReviews(user, user_reviews.values.toSeq, newIDs_user_recipes, csvDelimiter)
+                logger.info(s"Got ${recipes_from_reviews._1.length} new recipes and ${recipes_from_reviews._2.length} repeated recipes")
+                val new_recipes_recipes: Seq[Recipe] = new_recipes ++ recipes_from_reviews._1
+                val newIDs = new_recipes_recipes.map(_.id)
+
+                logger.info("Getting reviews from user recipes...")
+                val recipes_reviews: Map[Long, Seq[Review]] = Extractor.extractRecipesReviews(newIDs_user_recipes, max_reviews_per_recipe, min_review_text_length, csvDelimiter)
                 val recipes_reviews_map: Map[Long, Review] = recipes_reviews.values.flatten.flatMap(rev => Map(rev.id -> rev)).toMap
                 val reviews_map: Map[Long, Review] = recipes_reviews_map ++
                     user_reviews.filter({case(id, _) => !recipes_reviews_map.isDefinedAt(id)})
@@ -271,9 +278,6 @@ object AllrecipesExtractor extends Logging{
                 logger.info(s"Got ${reviews.size} reviews from recipes")
                 val reviewsindb = reviews_map.keys
                 val reviewsincsv = reviews
-                if(reviewsindb.size != reviewsincsv.size){
-                  logger.info(s"WARRNN!!!: ${reviewsincsv.size} ${reviewsindb.size}")
-                }
 
                 Thread.sleep(500)
 
@@ -293,9 +297,9 @@ object AllrecipesExtractor extends Logging{
                   System.exit(1)
                 }
 
-                val filterUsers: Seq[User] => Set[User] = seq => {
+                val filterUsers: Set[User] => Set[User] = seq => {
                   val seq1 = seq.filter(_.id != user.id)
-                  val seq2 = seq1.zip(Seq.fill(seq1.length)(user.id)).toSet
+                  val seq2 = seq1.zip(Seq.fill(seq1.size)(user.id))
                   val seq3 = seq2.map(_._1)
                   seq3
                 }
@@ -346,7 +350,7 @@ object AllrecipesExtractor extends Logging{
 
                 //Dataset writing
                 logger.info("Writing into dataset...")
-                datasetDAO.addRecipes(new_recipes.values.flatten.toSeq)
+                datasetDAO.addRecipes(new_recipes_recipes)
                 datasetDAO.addPublications(user.id, publications)
                 datasetDAO.addUser(user)
                 datasetDAO.addFavourites(user.id, favourites)
@@ -357,7 +361,7 @@ object AllrecipesExtractor extends Logging{
 
                 total_reviews += reviews.size
                 extracted_users += 1
-                total_recipes += len
+                total_recipes += new_recipes_recipes.length
 
                 logger.info(s"Extracted $total_reviews reviews in total")
                 logger.info(s"Extracted $total_recipes recipes in total")

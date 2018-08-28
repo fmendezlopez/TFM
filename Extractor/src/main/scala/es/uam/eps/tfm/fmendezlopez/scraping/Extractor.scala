@@ -118,10 +118,10 @@ object Extractor extends Logging{
 
   @throws[ScrapingDetectionException]
   @throws[APIAuthorizationException]
-  def extractFollowing(id : Long, csvDelimiter : String, nusers : Int) : Option[Seq[User]] = {
+  def extractFollowing(id : Long, csvDelimiter : String, nusers : Int) : Option[Set[User]] = {
     val pagesize = HttpManager.getProperty("max-pagesize").toInt
     val npages = math.ceil(nusers.toDouble / pagesize).toInt
-    var result : Seq[User] = Seq()
+    var result : Set[User] = Set()
     try{
       (1 to npages).foreach(i => {
         val ret = HttpManager.requestFollowingAPI(id, pagesize = pagesize, pageNumber = i)
@@ -129,7 +129,7 @@ object Extractor extends Logging{
           logger.error(s"Could not retrieve following for id ${id}")
           return None
         }
-        val list : Seq[User] = Scraper.scrapeUserList(ret.get, csvDelimiter, nusers)
+        val list : Set[User] = Scraper.scrapeUserList(ret.get, csvDelimiter, nusers)
         result ++= list
       })
       Some(result)
@@ -153,10 +153,10 @@ object Extractor extends Logging{
 
   @throws[ScrapingDetectionException]
   @throws[APIAuthorizationException]
-  def extractFollowers(id : Long, csvDelimiter : String, nusers : Int) : Option[Seq[User]] = {
+  def extractFollowers(id : Long, csvDelimiter : String, nusers : Int) : Option[Set[User]] = {
     val pagesize = HttpManager.getProperty("max-pagesize").toInt
     val npages = math.ceil(nusers.toDouble / pagesize).toInt
-    var result : Seq[User] = Seq()
+    var result : Set[User] = Set()
     try{
       (1 to npages).foreach(i => {
         val ret = HttpManager.requestFollowersAPI(id, pagesize = pagesize, pageNumber = i)
@@ -164,7 +164,7 @@ object Extractor extends Logging{
           logger.error(s"Could not retrieve following for id ${id}")
           return None
         }
-        val list : Seq[User] = Scraper.scrapeUserList(ret.get, csvDelimiter, nusers)
+        val list : Set[User] = Scraper.scrapeUserList(ret.get, csvDelimiter, nusers)
         result ++= list
       })
       Some(result)

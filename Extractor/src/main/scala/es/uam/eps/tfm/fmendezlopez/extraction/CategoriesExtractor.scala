@@ -8,6 +8,7 @@ import java.net.SocketTimeoutException
 import java.util.Properties
 
 import com.github.tototoshi.csv.{CSVWriter, DefaultCSVFormat}
+import es.uam.eps.tfm.fmendezlopez.exception.{APIAuthorizationException, ScrapingDetectionException}
 import es.uam.eps.tfm.fmendezlopez.scraping.Extractor
 import es.uam.eps.tfm.fmendezlopez.utils._
 import net.ruippeixotog.scalascraper.browser.JsoupBrowser
@@ -80,16 +81,22 @@ object CategoriesExtractor extends Logging{
       csvCategoriesRel = CSVManager.openCSVWriter(outputDir, csvCategoriesRelName, delimiter)
       csvCategories.writeRow(properties.getString("stage4.stage1.dataset.categories.header"))
       csvCategoriesRel.writeRow(properties.getString("stage4.stage1.dataset.category_hierarchy.header"))
+      csvCategories.writeRow(Seq(0, "Base category", "https://www.allrecipes.com/recipes", 0))
 
-      val start = System.currentTimeMillis()
-      //todo capturar excepciones de extractCategories
-      val mainCategories = Extractor.extractCategories(allCategoriesURL).getOrElse(new JSONArray)
-      val mainJSON = processGroups(mainCategories, -1, "", 0, 0, allCategoriesURL)
-      val end = System.currentTimeMillis()
-      logger.info(s"Elapsed time: ${end - start}ms")
-      println(mainJSON.toString())
-      CSVManager.closeCSVWriter(csvCategories)
-      CSVManager.closeCSVWriter(csvCategoriesRel)
+      try{
+        val start = System.currentTimeMillis()
+        val mainCategories = Extractor.extractCategories(allCategoriesURL).getOrElse(new JSONArray)
+        val mainJSON = processGroups(mainCategories, -1, "", 0, 0, allCategoriesURL)
+        val end = System.currentTimeMillis()
+        logger.info(s"Elapsed time: ${end - start}ms")
+        println(mainJSON.toString())
+        beforeExit
+      } catch {
+        case e@(_: ScrapingDetectionException | _: APIAuthorizationException) =>
+          logger.fatal(e)
+          System.exit(1)
+          beforeExit
+      }
     }
   }
 
@@ -147,18 +154,26 @@ object CategoriesExtractor extends Logging{
           logger.debug(s"Processing category: ${name}")
           val curl = s"${baseURL}${path}"
           connectionProperties.replace("referrer", cat_url)
-          val subCategories = Extractor.extractCategories(curl).getOrElse(new JSONArray)
-          ncategories += 1
-          if(ncategories % connectionProperties.getProperty("delay-n").toInt == 0){
-            logger.info(s"Got ${ncategories} categories. Sleeping...")
-            Thread.sleep(connectionProperties.getProperty("delay-categories").toLong)
+          try{
+            val subCategories = Extractor.extractCategories(curl).getOrElse(new JSONArray)
+            ncategories += 1
+            if(ncategories % connectionProperties.getProperty("delay-n").toInt == 0){
+              logger.info(s"Got ${ncategories} categories. Sleeping...")
+              Thread.sleep(connectionProperties.getProperty("delay-categories").toLong)
+            }
+            else{
+              Thread.sleep(connectionProperties.getProperty("delay-category").toLong)
+            }
+            categoriesVisited += id
+            processGroups(subCategories, id, newHierarchy, currDepth + 1, id, curl)
+            logger.debug(s"Processed category: ${id}_${title}")
+          } catch {
+            case e@(_: ScrapingDetectionException | _: APIAuthorizationException) =>
+              logger.fatal(e)
+              System.exit(1)
+              beforeExit
           }
-          else{
-            Thread.sleep(connectionProperties.getProperty("delay-category").toLong)
-          }
-          categoriesVisited += id
-          processGroups(subCategories, id, newHierarchy, currDepth + 1, id, curl)
-          logger.debug(s"Processed category: ${id}_${title}")
+
         }
         /*
         category.put("ChildHubs", subArray)

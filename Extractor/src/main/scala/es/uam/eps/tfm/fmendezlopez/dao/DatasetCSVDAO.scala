@@ -56,40 +56,52 @@ object DatasetCSVDAO {
 
   def addRecipes(recipes: Seq[Recipe]): Unit = {
     recipes foreach {recipe =>
-      writers("recipes").writeRow(Utils.flatten(Seq(recipe.toSeq())))
-      recipe.ingredients.foreach(ingredient => writers("ingredients").writeRow(Utils.flatten(Seq(recipe.id, ingredient.toSeq()))))
-      recipe.steps.foreach({ case (number, text) => writers("steps").writeRow(Seq(recipe.id, number, text)) })
+      writers("recipes").writeRow(preprocessSeq(Utils.flatten(Seq(recipe.toSeq()))))
+      recipe.ingredients.foreach(ingredient => writers("ingredients").writeRow(preprocessSeq(Utils.flatten(Seq(recipe.id, ingredient.toSeq())))))
+      recipe.steps.foreach({ case (number, text) => writers("steps").writeRow(preprocessSeq(Seq(recipe.id, number, text))) })
       if (recipe.nutritionInfo.isDefined)
-        writers("nutrition").writeRow(Utils.flatten(Seq(recipe.id, recipe.nutritionInfo.get.toSeq())))
-      writers("similar").writeAll(recipes.map(similar => Seq(recipe.id, similar.id)))
+        writers("nutrition").writeRow(preprocessSeq(Utils.flatten(Seq(recipe.id, recipe.nutritionInfo.get.toSeq()))))
+      writers("similar").writeAll(preprocessData(recipes.map(similar => Seq(recipe.id, similar.id))))
     }
   }
 
   def addFavourites(userID: Long, recipes: Seq[Long]): Unit = {
-    writers("favourites").writeAll(recipes.map(id => Seq(id, userID)))
+    writers("favourites").writeAll(preprocessData(recipes.map(id => Seq(id, userID))))
   }
 
   def addMadeIt(userID: Long, recipes: Seq[Long]): Unit = {
-    writers("madeit").writeAll(recipes.map(id => Seq(id, userID)))
+    writers("madeit").writeAll(preprocessData(recipes.map(id => Seq(id, userID))))
   }
 
   def addPublications(userID: Long, recipes: Seq[Long]): Unit = {
-    writers("publications").writeAll(recipes.map(id => Seq(id, userID)))
+    writers("publications").writeAll(preprocessData(recipes.map(id => Seq(id, userID))))
   }
 
   def addReviews(reviews: Seq[Review]): Unit = {
-    writers("reviews").writeAll(reviews.map(review => review.toSeq()))
+    writers("reviews").writeAll(preprocessData(reviews.map(review => review.toSeq())))
   }
 
   def addUser(user: User): Unit = {
-    writers("users").writeRow(user.toSeq)
+    writers("users").writeRow(preprocessSeq(user.toSeq))
   }
 
   def addFollowers(user: User, users: Seq[Long]): Unit = {
-    writers("fellowship").writeAll(users.map(Seq(_, user.id)))
+    writers("fellowship").writeAll(preprocessData(users.map(Seq(_, user.id))))
   }
 
   def addFollowing(user: User, users: Seq[Long]): Unit = {
-    writers("fellowship").writeAll(users.map(Seq(user.id, _)))
+    writers("fellowship").writeAll(preprocessData(users.map(Seq(user.id, _))))
+  }
+
+  def preprocessSeq(data: Seq[Any]): Seq[Any] = {
+    data.map(element => {
+      if(element.isInstanceOf[String]){
+        element.asInstanceOf[String].replaceAll("[\0'\"]", "")
+      } else element
+    })
+  }
+
+  def preprocessData(data: Seq[Seq[Any]]): Seq[Seq[Any]] = {
+    data.map(preprocessSeq(_))
   }
 }

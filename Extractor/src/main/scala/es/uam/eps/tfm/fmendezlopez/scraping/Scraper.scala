@@ -556,15 +556,20 @@ object Scraper extends Logging{
     user
   }
 
-  def scrapeUserList(json : String, csvDelimiter : String, nusers: Int) : Seq[User] = {
+  def scrapeUserList(json : String, csvDelimiter : String, nusers: Int) : Set[User] = {
     val mainJSON = new JSONObject(json)
-    var result : Seq[User] = Seq()
+    var ids: Set[Long] = Set()
+    var result : Set[User] = Set()
     val arr = mainJSON.getJSONArray("users")
     val length = nusers.min(arr.length())
     var i = 0
     while(i < length){
-      val user = arr.getJSONObject(i)
-      result :+= scrapeUser(Right(user), csvDelimiter)
+      val usr = arr.getJSONObject(i)
+      val user = scrapeUser(Right(usr), csvDelimiter)
+      if(!ids.contains(user.id)){
+        ids += user.id
+        result += user
+      }
       i += 1
     }
     result

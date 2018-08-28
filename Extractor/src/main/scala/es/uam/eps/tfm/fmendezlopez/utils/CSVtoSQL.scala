@@ -108,8 +108,8 @@ object CSVtoSQL extends Logging{
         .read
         .jdbc(url, s"""(SELECT * FROM public."${table}" LIMIT 0) AS A""", connectionProperties)
         .schema
-      val df1 = readCSV(datasetPath, file.getName, Some(options), Some(schema))
-      val df = if(table == "FELLOWSHIP") df1.dropDuplicates("ID_FOLLOWER","ID_FOLLOWEE") else df1
+      val aux = readCSV(datasetPath, file.getName, Some(options), Some(schema))
+      val df = if(table == "FELLOWSHIP") aux.dropDuplicates(aux.columns) else aux
       df
         .write
         .mode(SaveMode.Append)
@@ -118,9 +118,7 @@ object CSVtoSQL extends Logging{
     files.filter(file => firstTables.contains(file.getName)).foreach(file => {send(file)})
     files.filterNot(file => firstTables.contains(file.getName)).foreach(file => {send(file)})
   }
-//todo quitar duplicados al extraer comunidad
-  //todo añadir la eliminacion del caracter nulo en la extraccion
-//todo añadir en el extractor de categorias la escritura de la categoria con id 0
+
   def readCSV(path : String, name: String, options : Option[Map[String, String]], schema : Option[StructType]) : DataFrame = {
     val suffix = if(name.contains("csv")) "" else ".csv"
     val myPath = s"${path}${File.separator}${name}${suffix}"
