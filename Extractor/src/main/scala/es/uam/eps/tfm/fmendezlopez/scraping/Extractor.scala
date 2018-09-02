@@ -9,6 +9,7 @@ import es.uam.eps.tfm.fmendezlopez.utils.{HttpManager, Logging, Utils}
 import org.json.{JSONArray, JSONObject}
 
 import scala.collection.mutable
+import scala.util.Try
 
 /**
   * Created by franm on 20/06/2017.
@@ -73,15 +74,7 @@ object Extractor extends Logging{
 
       case aae : APIAuthorizationException =>
         logger.error(aae)
-        if(HttpManager.resetToken) {
-          val rt = extractRecipe(author_id, webURL, apiURL, csvDelimiter)
-          if(rt.isEmpty)
-            throw new APIAuthorizationException(aae.getMessage)
-          else
-            rt
-        }
-        else
-          throw new APIAuthorizationException(aae.getMessage)
+        return None
     }
   }
 
@@ -515,16 +508,36 @@ object Extractor extends Logging{
                             csvDelimiter: String)
   : Map[Long, Seq[Review]] =
   {
+    val delay = HttpManager.getProperty("delay-recipe").toLong
+    val nrecipes_delay = HttpManager.getProperty("nrecipes").toLong
+    val delay_nrecipes = HttpManager.getProperty("delay-nrecipes").toLong
+
     val pageSize = HttpManager.getProperty("max-pagesize").toInt
     val npages = math.ceil(reviews_per_recipe.toDouble / pageSize).toInt
+
+    var nrecipes = 0
+
     recipes.flatMap(recipe => {
       val seq: Seq[Review] = (1 to npages).flatMap(pageNumber => {
         val potReviews = HttpManager.requestRecipeReviewsAPI(recipe, pagesize = pageSize, pageNumber = pageNumber)
-        val json = potReviews.getOrElse({logger.warn(s"Could not extract reviews for recipe $recipe");"""{"reviews": []}"""})
-        Scraper
-          .scrapeRecipesReviewsList(recipe, json, csvDelimiter, reviews_per_recipe)
-          .filterNot(review => DatabaseDAO.existsReview(review.id))
-          .filter(_.text.length >= min_text_length)
+        if (potReviews.isDefined) {
+          nrecipes += 1
+          if (nrecipes % nrecipes_delay == 0) {
+            logger.info(s"Extracted ${nrecipes} recipes. Sleeping...")
+            Thread.sleep(delay_nrecipes)
+          }
+          else
+            Thread.sleep(delay)
+          val json = potReviews.get
+          Scraper
+            .scrapeRecipesReviewsList(recipe, json, csvDelimiter, reviews_per_recipe)
+            .filterNot(review => DatabaseDAO.existsReview(review.id))
+            .filter(_.text.length >= min_text_length)
+        }
+        else{
+          logger.warn(s"Could not extract reviews for recipe $recipe")
+          Seq()
+        }
       })
       Map(recipe -> seq)
     }) toMap

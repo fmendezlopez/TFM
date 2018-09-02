@@ -214,6 +214,7 @@ object AllrecipesExtractor extends Logging{
             //Get user profile
             logger.info("Getting user profile...")
             val potUser = Extractor.extractUser(id, csvDelimiter)
+            Thread.sleep(500)
             if (potUser.isEmpty) {
               logger.fatal("Stopping...")
               beforeExit(state)
@@ -230,6 +231,7 @@ object AllrecipesExtractor extends Logging{
               HttpManager.setProperty("referrer", user.profileUrl)
               logger.info("Getting user recipes...")
               val potUserRecipes = Extractor.extractUserRecipes(user, csvDelimiter, maxrecipes)
+              Thread.sleep(500)
               if (potUserRecipes.isEmpty) {
                 logger.fatal("Impossible to extract user recipes.\nClosing...")
                 beforeExit(state)
@@ -254,6 +256,7 @@ object AllrecipesExtractor extends Logging{
               if (len > 0) {
                 logger.info("Getting user reviews...")
                 val potReviews = Extractor.extractUserReviews(user.id, csvDelimiter, max_userreviews)
+                Thread.sleep(500)
                 if (potReviews.isEmpty) {
                   logger.fatal("Stopping...")
                   beforeExit(state)
@@ -261,16 +264,17 @@ object AllrecipesExtractor extends Logging{
                 }
                 val user_reviews: Map[Long, Review] = potReviews.get
                 logger.info(s"Got ${user_reviews.size} user reviews")
-                Thread.sleep(500)
 
                 logger.info("Getting recipes from user reviews...")
                 val recipes_from_reviews = Extractor.extractRecipeFromReviews(user, user_reviews.values.toSeq, newIDs_user_recipes, csvDelimiter)
+                Thread.sleep(500)
                 logger.info(s"Got ${recipes_from_reviews._1.length} new recipes and ${recipes_from_reviews._2.length} repeated recipes")
                 val new_recipes_recipes: Seq[Recipe] = new_recipes ++ recipes_from_reviews._1
                 val newIDs = new_recipes_recipes.map(_.id)
 
                 logger.info("Getting reviews from user recipes...")
                 val recipes_reviews: Map[Long, Seq[Review]] = Extractor.extractRecipesReviews(newIDs_user_recipes, max_reviews_per_recipe, min_review_text_length, csvDelimiter)
+                Thread.sleep(500)
                 val recipes_reviews_map: Map[Long, Review] = recipes_reviews.values.flatten.flatMap(rev => Map(rev.id -> rev)).toMap
                 val reviews_map: Map[Long, Review] = recipes_reviews_map ++
                     user_reviews.filter({case(id, _) => !recipes_reviews_map.isDefinedAt(id)})
@@ -279,18 +283,17 @@ object AllrecipesExtractor extends Logging{
                 val reviewsindb = reviews_map.keys
                 val reviewsincsv = reviews
 
-                Thread.sleep(500)
-
                 logger.info("Getting user following...")
                 val potFollowing = Extractor.extractFollowing(id, csvDelimiter, max_userfollowing)
+                Thread.sleep(500)
                 if (potFollowing.isEmpty) {
                   logger.fatal("Stopping...")
                   beforeExit(state)
                   System.exit(1)
                 }
-                Thread.sleep(500)
                 logger.info("Getting user followers...")
                 val potFollowers = Extractor.extractFollowers(id, csvDelimiter, max_userfollower)
+                Thread.sleep(500)
                 if (potFollowers.isEmpty) {
                   logger.fatal("Stopping...")
                   beforeExit(state)

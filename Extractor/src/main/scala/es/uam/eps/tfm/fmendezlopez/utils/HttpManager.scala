@@ -171,6 +171,11 @@ object HttpManager extends Logging{
           case 200 =>
             continue = false
             ret = Some(response.body())
+          case 301 =>
+            var newURL = response.header("Location")
+            if(!newURL.startsWith("http")) newURL = s"${newURL}${connectionProperties.getProperty("base-host")}"
+            return requestCategory(newURL, connectionProperties)
+          case 403 =>
           case 401 =>
             logger.warn("Token expired. Sleeping...")
             Thread.sleep(delayAuth)
@@ -510,7 +515,7 @@ object HttpManager extends Logging{
 
   @throws(classOf[ScrapingDetectionException])
   @throws(classOf[APIAuthorizationException])
-  def requestRecipeAPIURL(url : String, connectionProperties : Properties = connectionProperties): Option[String] = {
+  def requestRecipeAPIURL(url : String, connectionProperties : Properties = connectionProperties, reset: Boolean = false): Option[String] = {
     val connection = Jsoup.connect(url)
 
     connection.userAgent(selectUserAgent)
@@ -550,16 +555,25 @@ object HttpManager extends Logging{
             continue = false
             ret = Some(response.body())
           case 401 =>
+
+            if(reset)
+              throw new APIAuthorizationException("API authorization token expired.")
+
             val json = new JSONObject(response.body())
             val msg = json.getString("message")
             if(msg == properties.getString("general.api.error.token")){
               logger.warn("Token expired. Sleeping...")
               Thread.sleep(delayAuth)
-              throw new APIAuthorizationException("API authorization token expired.")
             }
             else if(msg == properties.getString("general.api.error.login")){
               logger.warn("Login must be performed. Ignoring...")
-              throw new APILoginException("API login must be performed.")
+              Thread.sleep(delayAuth)
+            }
+            if(HttpManager.resetToken){
+              return requestRecipeAPIURL(url, connectionProperties, true)
+            }
+            else{
+              throw new APIAuthorizationException("API authorization token expired.")
             }
           case 403 =>
             logger.error(s"Scraper detected!\nSleeping ${delayDetection}...")

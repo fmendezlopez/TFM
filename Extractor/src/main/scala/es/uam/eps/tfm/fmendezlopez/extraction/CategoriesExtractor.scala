@@ -79,8 +79,8 @@ object CategoriesExtractor extends Logging{
 
       csvCategories = CSVManager.openCSVWriter(outputDir, csvCategoriesName, delimiter)
       csvCategoriesRel = CSVManager.openCSVWriter(outputDir, csvCategoriesRelName, delimiter)
-      csvCategories.writeRow(properties.getString("stage4.stage1.dataset.categories.header"))
-      csvCategoriesRel.writeRow(properties.getString("stage4.stage1.dataset.category_hierarchy.header"))
+      csvCategories.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.dataset.categories.header"), delimiter))
+      csvCategoriesRel.writeRow(Utils.headerToSeq(properties.getString("stage4.stage1.dataset.category_hierarchy.header"), delimiter))
       csvCategories.writeRow(Seq(0, "Base category", "https://www.allrecipes.com/recipes", 0))
 
       try{
